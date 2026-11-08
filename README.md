@@ -35,7 +35,14 @@
 「もう一度」で再戦するときも、毎回コイントスから始まります。通算成績も表示されます。
 色で遊ぶときは色ごとに記号（●▲■◆★♥✚☾）が付くので、色が見分けにくくても遊べます。
 
-## 起動方法
+## 遊ぶ
+
+GitHub Pages で公開しています： https://n494n0tk.github.io/bulls-and-cows/
+
+`main` ブランチに push すると、GitHub Actions（`.github/workflows/deploy-pages.yml`）がテストを実行し、通れば自動で公開されます。
+初回だけ、リポジトリの **Settings → Pages → Build and deployment → Source** を **GitHub Actions** にしてください。
+
+## 手元で起動する
 
 ES Modules を使っているため、ファイルを直接開くのではなくローカルサーバーで配信してください。
 
