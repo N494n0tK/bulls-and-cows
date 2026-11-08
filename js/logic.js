@@ -21,6 +21,8 @@ export const DEFAULT_SETTINGS = Object.freeze({
   allowDuplicates: false, // 同じものの重複を許すか
   maxTurns: 8, // 1人あたりのコール回数（0 = 無制限）。2人とも使い切ったら引き分け
   symbols: 'number', // ピンの見た目：'number'（数字）または 'color'（色）
+  timeBank: 180, // 1人あたりの持ち時間（秒、0 = なし）。使い切ったら負け
+  turnLimit: 0, // 1回のコールの制限時間（秒、0 = なし）。過ぎたらパス
 });
 
 /** お題に対するコールの判定。hit = 色も位置も一致、blow = 色だけ一致。 */
@@ -63,6 +65,8 @@ export function normalizeSettings(input = {}) {
   s.allowDuplicates = Boolean(s.allowDuplicates);
   s.maxTurns = clampInt(s.maxTurns, 0, 30);
   s.symbols = s.symbols === 'color' ? 'color' : 'number';
+  s.timeBank = clampInt(s.timeBank, 0, 3600);
+  s.turnLimit = clampInt(s.turnLimit, 0, 600);
   // 重複なしなら、色の数はピンの数以上でなければお題が作れない
   if (!s.allowDuplicates && s.colors < s.length) s.colors = s.length;
   return s;
@@ -107,11 +111,12 @@ export function createGame(settings, names, starter = 0, secret = null) {
     settings: s,
     names: [...names],
     secret: [...code],
-    guesses: [], // { player, code, hit, blow }（2人ぶんを時系列で）
+    guesses: [], // { player, code, hit, blow } またはパス { player, pass: true }（2人ぶんを時系列で）
+    clocks: [s.timeBank * 1000, s.timeBank * 1000], // 残りの持ち時間（ミリ秒）
     starter,
     current: starter,
     phase: 'playing', // playing → finished
-    result: null, // { winner: 0 | 1 | null, reason: 'solved' | 'out-of-turns' }
+    result: null, // { winner: 0 | 1 | null, reason: 'solved' | 'out-of-turns' | 'time-up' }
   };
 }
 
@@ -126,17 +131,44 @@ export function makeGuess(game, code) {
   const entry = { player: me, code: [...code], ...res };
   game.guesses.push(entry);
   const solved = res.hit === game.settings.length;
-
-  if (solved) {
-    game.phase = 'finished';
-    game.result = { winner: me, reason: 'solved' };
-  } else if (game.settings.maxTurns > 0 && game.guesses.length >= game.settings.maxTurns * 2) {
-    game.phase = 'finished';
-    game.result = { winner: null, reason: 'out-of-turns' };
-  } else {
-    game.current = 1 - me;
-  }
+  if (solved) finish(game, me, 'solved');
+  else advance(game);
   return { ...entry, solved };
+}
+
+/** 1回のコールの制限時間が過ぎたとき：コールせずにパス（コール1回分を使う）。 */
+export function passTurn(game) {
+  if (game.phase !== 'playing') throw new Error('いまはパスできません');
+  game.guesses.push({ player: game.current, pass: true });
+  advance(game);
+}
+
+/**
+ * 手番プレイヤーの持ち時間を ms だけ減らす。使い切ったらその人の負け。
+ * 持ち時間なしの設定では何もしない。持ち時間切れになったら true を返す。
+ */
+export function spendTime(game, ms) {
+  if (game.phase !== 'playing' || game.settings.timeBank === 0) return false;
+  const me = game.current;
+  game.clocks[me] = Math.max(0, game.clocks[me] - Math.max(0, ms));
+  if (game.clocks[me] === 0) {
+    finish(game, 1 - me, 'time-up');
+    return true;
+  }
+  return false;
+}
+
+function finish(game, winner, reason) {
+  game.phase = 'finished';
+  game.result = { winner, reason };
+}
+
+function advance(game) {
+  if (game.settings.maxTurns > 0 && game.guesses.length >= game.settings.maxTurns * 2) {
+    finish(game, null, 'out-of-turns');
+  } else {
+    game.current = 1 - game.current;
+  }
 }
 
 /** プレイヤー index がこれまでにコールした回数。 */
@@ -153,6 +185,7 @@ export function countCandidates(game) {
   const walk = (i) => {
     if (i === s.length) {
       if (game.guesses.every((g) => {
+        if (g.pass) return true;
         const r = score(code, g.code);
         return r.hit === g.hit && r.blow === g.blow;
       })) n++;

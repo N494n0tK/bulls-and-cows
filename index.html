@@ -69,6 +69,26 @@
             </select>
           </label>
           <label class="setting">
+            <span>持ち時間（1人あたり）</span>
+            <select id="set-bank">
+              <option value="0">なし</option>
+              <option value="60">1分</option>
+              <option value="120">2分</option>
+              <option value="180">3分</option>
+              <option value="300">5分</option>
+              <option value="600">10分</option>
+            </select>
+          </label>
+          <label class="setting">
+            <span>1回のコールの制限時間</span>
+            <select id="set-turnlimit">
+              <option value="0">なし</option>
+              <option value="15">15秒</option>
+              <option value="30">30秒</option>
+              <option value="60">60秒</option>
+            </select>
+          </label>
+          <label class="setting">
             <span>ピンの見た目</span>
             <select id="set-symbols">
               <option value="number">数字（1〜8）</option>
@@ -107,6 +127,10 @@
             <h2 id="guess-title"></h2>
             <span class="round" id="round-label"></span>
           </div>
+          <div class="turn-timer" id="turn-timer" hidden>
+            <div class="turn-timer-track"><div class="turn-timer-bar" id="turn-timer-bar"></div></div>
+            <span id="turn-timer-text"></span>
+          </div>
           <div class="code-input" id="guess-input"></div>
           <div class="row-actions">
             <button class="btn" id="btn-guess-clear" type="button">クリア</button>
@@ -115,7 +139,13 @@
           <p class="error" id="guess-error" role="alert"></p>
         </div>
       </div>
+      <div class="card pause" id="pause-overlay" hidden>
+        <h2>一時停止中</h2>
+        <p>時計は止まっています。盤面は再開すると表示されます。</p>
+        <button class="btn primary big" id="btn-resume" type="button">再開する</button>
+      </div>
       <div class="game-footer">
+        <button class="btn ghost small" id="btn-pause" type="button">一時停止</button>
         <button class="btn ghost small" id="btn-quit" type="button">対戦をやめる</button>
       </div>
     </section>
@@ -157,6 +187,10 @@
       <h3>駆け引きのコツ</h3>
       <p class="hint">コールもヒントも2人に見えています。自分のコールで答えがしぼれると、次の番の相手が先に当ててしまうかもしれません。
       わざと情報を出しすぎないコールも作戦のうち。各コールのあとに答えの候補がいくつ残っていたかは、対戦が終わってから振り返れます。</p>
+      <h3>時間のルール</h3>
+      <p class="hint"><strong>持ち時間</strong>は自分の番の間だけ減っていき、0になったらその時点で負けです。
+      <strong>1回のコールの制限時間</strong>を過ぎると、その回はパス（コール1回分を使います）。
+      電話などで中断するときは「一時停止」を押してください。</p>
       <p class="hint">どちらも当てられずにコール回数を使い切ったら引き分けです。</p>
       <button class="btn primary" value="close">とじる</button>
     </form>

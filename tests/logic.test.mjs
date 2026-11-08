@@ -10,6 +10,8 @@ import {
   makeGuess,
   callsBy,
   countCandidates,
+  passTurn,
+  spendTime,
 } from '../js/logic.js';
 
 test('score: ヒットとブローを数える', () => {
@@ -128,4 +130,34 @@ test('countCandidates: 重複ありでも数えられる', () => {
   assert.equal(countCandidates(g), 1296);
   makeGuess(g, [0, 0, 1, 1]);
   assert.equal(g.phase, 'finished');
+});
+
+test('持ち時間：手番の人だけ減り、使い切ったら負け', () => {
+  const g = createGame({ timeBank: 60 }, ['A', 'B'], 0, SECRET);
+  assert.deepEqual(g.clocks, [60000, 60000]);
+  assert.equal(spendTime(g, 20000), false);
+  assert.deepEqual(g.clocks, [40000, 60000]);
+  makeGuess(g, [4, 5, 0, 1]);
+  spendTime(g, 59000);
+  assert.deepEqual(g.clocks, [40000, 1000]);
+  makeGuess(g, [4, 5, 0, 1]);
+  assert.equal(spendTime(g, 45000), true);
+  assert.equal(g.clocks[0], 0);
+  assert.deepEqual(g.result, { winner: 1, reason: 'time-up' });
+});
+
+test('持ち時間なしなら時間は減らない', () => {
+  const g = createGame({ timeBank: 0 }, ['A', 'B'], 0, SECRET);
+  assert.equal(spendTime(g, 1e9), false);
+  assert.equal(g.phase, 'playing');
+});
+
+test('パス：手番が移り、コール1回分を使う。候補数には影響しない', () => {
+  const g = createGame({ maxTurns: 1 }, ['A', 'B'], 0, SECRET);
+  passTurn(g);
+  assert.equal(g.current, 1);
+  assert.equal(callsBy(g, 0), 1);
+  assert.equal(countCandidates(g), 360);
+  passTurn(g);
+  assert.deepEqual(g.result, { winner: null, reason: 'out-of-turns' });
 });

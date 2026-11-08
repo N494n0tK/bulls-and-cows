@@ -8,6 +8,8 @@ import {
   makeGuess,
   callsBy,
   countCandidates,
+  passTurn,
+  spendTime,
 } from './logic.js';
 
 const STORAGE_KEY = 'hit-and-blow-duel';
@@ -169,6 +171,8 @@ function readSetup() {
     maxTurns: $('set-turns').value,
     allowDuplicates: $('set-dup').checked,
     symbols: $('set-symbols').value,
+    timeBank: $('set-bank').value,
+    turnLimit: $('set-turnlimit').value,
   });
 }
 
@@ -182,6 +186,10 @@ function fillSetup() {
   if (!$('set-turns').value) $('set-turns').value = DEFAULT_SETTINGS.maxTurns; // 選択肢にない古い保存値
   $('set-dup').checked = app.settings.allowDuplicates;
   $('set-symbols').value = app.settings.symbols;
+  $('set-bank').value = app.settings.timeBank;
+  if (!$('set-bank').value) $('set-bank').value = DEFAULT_SETTINGS.timeBank;
+  $('set-turnlimit').value = app.settings.turnLimit;
+  if (!$('set-turnlimit').value) $('set-turnlimit').value = DEFAULT_SETTINGS.turnLimit;
   updateSetupHint();
 }
 
@@ -210,16 +218,108 @@ function startMatch() {
   app.game = createGame(app.settings, app.names, app.starter);
   app.candidates = [countCodes(app.game.settings)];
   $('ready-pegs').replaceChildren(codeRow(app.game.secret, { hidden: true }));
-  $('ready-text').textContent = `先攻は ${app.names[app.starter]} さん。画面を2人で見られる場所に置いて、交互にコールしましょう。`;
+  const s = app.game.settings;
+  const rules = [];
+  if (s.timeBank) rules.push(`持ち時間は各${s.timeBank % 60 ? formatTime(s.timeBank * 1000) : `${s.timeBank / 60}分`}（使い切ったら負け）`);
+  if (s.turnLimit) rules.push(`1回のコールは${s.turnLimit}秒以内（過ぎたらパス）`);
+  $('ready-text').textContent =
+    `先攻は ${app.names[app.starter]} さん。画面を2人で見られる場所に置いて、交互にコールしましょう。` +
+    (rules.length ? `\n${rules.join('、')}。時計は「対戦開始」を押すと動き出します。` : '');
   show('screen-ready');
 }
 $('btn-ready').addEventListener('click', () => {
   show('screen-game');
+  setPaused(false);
   prepareTurn();
+  startClock();
 });
+
+// ---- 時計（持ち時間・1回のコールの制限時間） ----
+const clock = { timer: null, last: 0, turnUsed: 0, paused: false };
+const hasTimer = (s) => s.timeBank > 0 || s.turnLimit > 0;
+
+function formatTime(ms) {
+  const sec = Math.ceil(ms / 1000);
+  return `${Math.floor(sec / 60)}:${String(sec % 60).padStart(2, '0')}`;
+}
+
+function startClock() {
+  stopClock();
+  if (!hasTimer(app.game.settings)) return;
+  clock.last = performance.now();
+  clock.timer = setInterval(tick, 100);
+  updateClocks();
+}
+
+function stopClock() {
+  clearInterval(clock.timer);
+  clock.timer = null;
+}
+
+/** 前回からの経過時間を手番プレイヤーに反映し、時間切れを処理する。 */
+function tick() {
+  const g = app.game;
+  const now = performance.now();
+  const delta = now - clock.last;
+  clock.last = now;
+  if (!g || g.phase !== 'playing' || clock.paused || !clock.timer) return;
+  clock.turnUsed += delta;
+  const who = g.names[g.current];
+  if (spendTime(g, delta)) {
+    stopClock();
+    updateClocks();
+    toast(`${who}さん、持ち時間切れ！`, true);
+    finishMatch();
+    return;
+  }
+  if (g.settings.turnLimit && clock.turnUsed >= g.settings.turnLimit * 1000) {
+    passTurn(g);
+    app.candidates.push(app.candidates[app.candidates.length - 1]);
+    toast(`${who}さん、時間切れでパス`);
+    if (g.phase === 'finished') {
+      stopClock();
+      finishMatch();
+    } else {
+      prepareTurn();
+    }
+    return;
+  }
+  updateClocks();
+}
+
+function updateClocks() {
+  const g = app.game;
+  if (!g) return;
+  const s = g.settings;
+  for (const i of [0, 1]) {
+    const c = document.getElementById(`clock-${i}`);
+    if (!c) continue;
+    c.textContent = formatTime(g.clocks[i]);
+    c.classList.toggle('low', g.clocks[i] <= 20000);
+  }
+  const box = $('turn-timer');
+  box.hidden = !s.turnLimit || g.phase !== 'playing';
+  if (s.turnLimit) {
+    const left = Math.max(0, s.turnLimit * 1000 - clock.turnUsed);
+    $('turn-timer-text').textContent = `あと ${Math.ceil(left / 1000)} 秒`;
+    $('turn-timer-bar').style.transform = `scaleX(${left / (s.turnLimit * 1000)})`;
+    box.classList.toggle('low', left <= 5000);
+  }
+}
+
+function setPaused(paused) {
+  clock.paused = paused;
+  clock.last = performance.now();
+  $('pause-overlay').hidden = !paused;
+  document.querySelector('#screen-game .play').hidden = paused;
+  $('btn-pause').textContent = paused ? '再開する' : '一時停止';
+}
+$('btn-pause').addEventListener('click', () => setPaused(!clock.paused));
+$('btn-resume').addEventListener('click', () => setPaused(false));
 
 // ---- 3. 対戦画面 ----
 function prepareTurn() {
+  clock.turnUsed = 0;
   guessInput.reset(app.game.settings);
   $('guess-error').textContent = '';
   renderGame();
@@ -241,6 +341,13 @@ function renderBoard(container, game, { reveal = false } = {}) {
   game.guesses.forEach((g, r) => {
     const li = el('li', `p${g.player}`);
     li.append(el('span', 'num', r + 1), el('span', 'who', game.names[g.player]));
+    if (g.pass) {
+      li.classList.add('pass');
+      li.append(el('span', 'pass-text', '時間切れでパス'));
+      if (r === game.guesses.length - 1 && !reveal) li.classList.add('latest');
+      list.append(li);
+      return;
+    }
     li.append(codeRow(g.code, { size: 'sm' }), pips(g.hit, g.blow, s.length));
     const txt = el('span', 'hb-text');
     txt.innerHTML = `<b>${g.hit}</b>H <b>${g.blow}</b>B`;
@@ -271,9 +378,18 @@ function renderScorebar() {
   bar.replaceChildren();
   for (const i of [g.starter, 1 - g.starter]) {
     const chip = el('div', `player-chip p${i} ${g.phase === 'playing' && g.current === i ? 'turn' : ''}`);
-    chip.append(el('span', 'chip-name', g.names[i]), el('span', 'chip-tag', i === g.starter ? '先攻' : '後攻'));
+    const top = el('div', 'chip-top');
+    top.append(el('span', 'chip-name', g.names[i]), el('span', 'chip-tag', i === g.starter ? '先攻' : '後攻'));
+    const bottom = el('div', 'chip-bottom');
+    if (g.settings.timeBank) {
+      const c = el('span', 'chip-clock', formatTime(g.clocks[i]));
+      c.id = `clock-${i}`;
+      c.setAttribute('aria-label', '残りの持ち時間');
+      bottom.append(c);
+    }
     const max = g.settings.maxTurns;
-    chip.append(el('span', 'chip-left', max ? `残り ${max - callsBy(g, i)} 回` : `${callsBy(g, i)} 回コール`));
+    bottom.append(el('span', 'chip-left', max ? `残り ${max - callsBy(g, i)} 回` : `${callsBy(g, i)} 回コール`));
+    chip.append(top, bottom);
     bar.append(chip);
   }
 }
@@ -294,6 +410,8 @@ function renderGame() {
   const max = g.settings.maxTurns;
   const n = callsBy(g, cur) + 1;
   $('round-label').textContent = max ? `${n} / ${max} 回目` : `${n} 回目`;
+  $('btn-pause').hidden = !hasTimer(g.settings);
+  updateClocks();
 }
 
 $('btn-guess-clear').addEventListener('click', () => guessInput.reset(app.game.settings));
@@ -305,11 +423,18 @@ $('btn-guess').addEventListener('click', () => {
     $('guess-error').textContent = err;
     return;
   }
+  if (clock.timer) {
+    // ここまでの考慮時間を反映。ぎりぎりで時間切れになっていたら、このコールは無効
+    const before = g.guesses.length;
+    tick();
+    if (g.phase !== 'playing' || g.guesses.length !== before) return;
+  }
   const who = g.names[g.current];
   const res = makeGuess(g, code);
   app.candidates.push(res.solved ? 1 : countCandidates(g));
   toast(res.solved ? `${who}さん、全部ヒット！` : `${who}さん：${res.hit}ヒット ${res.blow}ブロー`, res.solved);
   if (g.phase === 'finished') {
+    stopClock();
     renderScorebar();
     renderBoard($('board'), g);
     finishMatch();
@@ -332,6 +457,7 @@ $('btn-quit').addEventListener('click', (e) => {
     return;
   }
   resetQuit();
+  stopClock();
   app.game = null;
   fillSetup();
   show('screen-setup');
@@ -345,7 +471,8 @@ function resetQuit() {
 // ---- 4. 結果画面 ----
 function finishMatch() {
   const g = app.game;
-  const { winner } = g.result;
+  const { winner, reason } = g.result;
+  stopClock();
   if (winner === null) app.wins[2]++;
   else app.wins[winner]++;
 
@@ -359,8 +486,10 @@ function finishMatch() {
     $('result-title').textContent = `${g.names[winner]}さんの勝ち！`;
     const loser = g.names[1 - winner];
     const prev = g.guesses[g.guesses.length - 2];
-    const helped = prev && prev.player === 1 - winner && app.candidates[g.guesses.length - 1] <= 3;
-    $('result-text').textContent = helped
+    const helped = prev && !prev.pass && prev.player === 1 - winner && app.candidates[g.guesses.length - 1] <= 3;
+    $('result-text').textContent = reason === 'time-up'
+      ? `${loser}さんの持ち時間が切れました。`
+      : helped
       ? `${loser}さんのコールで候補がしぼれたところを、すかさず当てました！`
       : `全体の${g.guesses.length}コール目で、お題を当てました。`;
   }
