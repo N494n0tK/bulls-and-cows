@@ -106,13 +106,24 @@
       <button class="btn primary big" id="btn-start" type="button">対戦スタート</button>
     </section>
 
-    <!-- 2. お題決定 -->
+    <!-- 2. コイントスで先攻・後攻を決める -->
     <section class="screen center" id="screen-ready" hidden>
-      <div class="card ready">
-        <div class="ready-pegs" id="ready-pegs" aria-hidden="true"></div>
-        <h2>お題が決まりました！</h2>
-        <p id="ready-text"></p>
-        <button class="btn primary big" id="btn-ready" type="button">対戦開始</button>
+      <div class="card ready" id="ready-card">
+        <h2 id="toss-title">コイントスで先攻を決めよう</h2>
+        <p class="toss-guide" id="toss-guide"></p>
+        <div class="coin-stage" id="coin-stage">
+          <div class="coin" id="coin" aria-hidden="true">
+            <div class="coin-face front p0"><small>表</small><span id="coin-name-0"></span></div>
+            <div class="coin-face back p1"><small>裏</small><span id="coin-name-1"></span></div>
+          </div>
+          <div class="coin-shadow" id="coin-shadow"></div>
+        </div>
+        <button class="btn primary big" id="btn-toss" type="button">コインを投げる</button>
+        <div class="toss-result" id="toss-result" hidden>
+          <p class="toss-winner" id="toss-winner" aria-live="polite"></p>
+          <p id="ready-text"></p>
+          <button class="btn primary big" id="btn-ready" type="button">対戦開始</button>
+        </div>
       </div>
     </section>
 
@@ -164,7 +175,7 @@
       </div>
       <div class="card board" id="result-board"></div>
       <div class="row-actions stack">
-        <button class="btn primary big" id="btn-rematch" type="button">もう一度（先攻・後攻を交代）</button>
+        <button class="btn primary big" id="btn-rematch" type="button">もう一度（コイントスから）</button>
         <button class="btn" id="btn-back" type="button">設定にもどる</button>
       </div>
     </section>
@@ -174,6 +185,7 @@
     <form method="dialog">
       <h2>あそびかた</h2>
       <ol>
+        <li>コイントスで先攻・後攻を決めます。</li>
         <li>コンピューターが、数字（または色）の並び（<strong>お題</strong>）をランダムに1つ決めます。</li>
         <li>2人で交互に、お題を予想して「コール」します。</li>
         <li>コールするたびにヒントが出ます。

@@ -35,7 +35,6 @@ function savePrefs(prefs) {
 const app = {
   names: ['プレイヤー1', 'プレイヤー2'],
   settings: { ...DEFAULT_SETTINGS },
-  starter: 0, // 次の対戦の先攻
   wins: [0, 0, 0], // [P1勝ち, P2勝ち, 引き分け]
   game: null,
   candidates: [], // 各コール後の残り候補数（先頭はコール前）
@@ -209,23 +208,81 @@ $('btn-start').addEventListener('click', () => {
   readSetup();
   savePrefs({ names: app.names, settings: app.settings });
   app.wins = [0, 0, 0];
-  app.starter = 0;
   startMatch();
 });
 
-// ---- 2. お題決定 ----
+// ---- 2. コイントス → お題決定 ----
+let tossing = false;
 function startMatch() {
-  app.game = createGame(app.settings, app.names, app.starter);
+  stopClock();
+  app.game = null;
+  const card = $('ready-card');
+  card.className = 'card ready';
+  $('toss-title').textContent = 'コイントスで先攻を決めよう';
+  $('toss-guide').textContent = `表が出たら ${app.names[0]} さん、裏が出たら ${app.names[1]} さんが先攻です。`;
+  $('coin-name-0').textContent = app.names[0];
+  $('coin-name-1').textContent = app.names[1];
+  for (const a of [$('coin'), $('coin-stage'), $('coin-shadow')]) a.getAnimations().forEach((x) => x.cancel());
+  $('coin').style.transform = '';
+  $('btn-toss').hidden = false;
+  $('btn-toss').disabled = false;
+  $('toss-result').hidden = true;
+  show('screen-ready');
+}
+
+$('btn-toss').addEventListener('click', async () => {
+  if (tossing) return;
+  tossing = true;
+  $('btn-toss').disabled = true;
+  const starter = Math.random() < 0.5 ? 0 : 1;
+  const reduce = window.matchMedia('(prefers-reduced-motion: reduce)').matches;
+  const duration = reduce ? 300 : 1900;
+  // 表（0）なら偶数回転、裏（1）なら半回転ぶん多く回して止める
+  const turns = 6;
+  const end = turns * 360 + (starter === 1 ? 180 : 0);
+  const coin = $('coin').animate(
+    [{ transform: 'rotateX(0deg)' }, { transform: `rotateX(${end}deg)` }],
+    { duration, easing: 'cubic-bezier(.15,.55,.3,1)', fill: 'forwards' },
+  );
+  $('coin-stage').animate(
+    [
+      { transform: 'translateY(0)', easing: 'cubic-bezier(.2,.7,.4,1)' },
+      { transform: 'translateY(-150px)', offset: 0.45, easing: 'cubic-bezier(.6,0,.8,.4)' },
+      { transform: 'translateY(0)', offset: 0.85 },
+      { transform: 'translateY(-12px)', offset: 0.92 },
+      { transform: 'translateY(0)' },
+    ],
+    { duration },
+  );
+  $('coin-shadow').animate(
+    [{ transform: 'scale(1)', opacity: 0.35 }, { transform: 'scale(0.45)', opacity: 0.12, offset: 0.45 }, { transform: 'scale(1)', opacity: 0.35, offset: 0.85 }, { transform: 'scale(1)', opacity: 0.35 }],
+    { duration },
+  );
+  try {
+    await coin.finished;
+  } catch {
+    tossing = false;
+    return; // 途中でやめた
+  }
+  tossing = false;
+  showTossResult(starter);
+});
+
+function showTossResult(starter) {
+  app.game = createGame(app.settings, app.names, starter);
   app.candidates = [countCodes(app.game.settings)];
-  $('ready-pegs').replaceChildren(codeRow(app.game.secret, { hidden: true }));
+  $('ready-card').className = `card ready p${starter} tossed`;
+  $('toss-title').textContent = starter === 0 ? '表！' : '裏！';
+  $('toss-guide').textContent = '';
+  $('toss-winner').textContent = `${app.names[starter]} さんが先攻！\n${app.names[1 - starter]} さんは後攻`;
+  $('btn-toss').hidden = true;
+  $('toss-result').hidden = false;
   const s = app.game.settings;
   const rules = [];
-  if (s.timeBank) rules.push(`持ち時間は各${s.timeBank % 60 ? formatTime(s.timeBank * 1000) : `${s.timeBank / 60}分`}（使い切ったら負け）`);
-  if (s.turnLimit) rules.push(`1回のコールは${s.turnLimit}秒以内（過ぎたらパス）`);
+  if (s.timeBank) rules.push(`持ち時間 各${s.timeBank % 60 ? formatTime(s.timeBank * 1000) : `${s.timeBank / 60}分`}`);
+  if (s.turnLimit) rules.push(`1回のコール ${s.turnLimit}秒まで`);
   $('ready-text').textContent =
-    `先攻は ${app.names[app.starter]} さん。画面を2人で見られる場所に置いて、交互にコールしましょう。` +
-    (rules.length ? `\n${rules.join('、')}。時計は「対戦開始」を押すと動き出します。` : '');
-  show('screen-ready');
+    'お題も決まりました。画面を2人で見られる場所に置きましょう。' + (rules.length ? `\n${rules.join('　／　')}` : '');
 }
 $('btn-ready').addEventListener('click', () => {
   show('screen-game');
@@ -499,10 +556,7 @@ function finishMatch() {
   setTimeout(() => show('screen-result'), 700);
 }
 
-$('btn-rematch').addEventListener('click', () => {
-  app.starter = 1 - app.game.starter;
-  startMatch();
-});
+$('btn-rematch').addEventListener('click', () => startMatch());
 $('btn-back').addEventListener('click', () => {
   fillSetup();
   show('screen-setup');

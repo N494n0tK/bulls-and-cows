@@ -171,6 +171,71 @@ main {
 .ready-pegs .peg:nth-child(4) { animation-delay: 0.24s; }
 .ready-pegs .peg:nth-child(5) { animation-delay: 0.32s; }
 .ready h2 { font-size: 1.4rem; }
+.ready.tossed h2 { color: var(--accent); font-size: 1.8rem; margin-bottom: 4px; }
+.toss-guide { margin: 0; }
+.coin-stage {
+  position: relative;
+  width: 168px;
+  height: 200px;
+  margin: 8px auto 4px;
+  perspective: 700px;
+  display: grid;
+  place-items: center;
+}
+.coin {
+  position: relative;
+  width: 150px;
+  height: 150px;
+  transform-style: preserve-3d;
+}
+.coin-face {
+  position: absolute;
+  inset: 0;
+  border-radius: 50%;
+  backface-visibility: hidden;
+  -webkit-backface-visibility: hidden;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 2px;
+  padding: 18px;
+  color: #fff;
+  background:
+    radial-gradient(circle at 35% 28%, rgba(255, 255, 255, 0.55), transparent 42%),
+    var(--accent);
+  box-shadow:
+    inset 0 0 0 7px rgba(255, 255, 255, 0.35),
+    inset 0 0 0 12px color-mix(in srgb, var(--accent) 70%, #000),
+    0 6px 0 color-mix(in srgb, var(--accent) 55%, #000);
+}
+.coin-face.back { transform: rotateX(180deg); }
+.coin-face small { font-size: 0.8rem; font-weight: 800; opacity: 0.85; letter-spacing: 0.2em; }
+.coin-face span {
+  font-size: 1.15rem;
+  font-weight: 900;
+  max-width: 100%;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  text-shadow: 0 1px 2px rgba(0, 0, 0, 0.25);
+}
+.coin-shadow {
+  position: absolute;
+  bottom: 0;
+  left: 50%;
+  width: 120px;
+  height: 16px;
+  margin-left: -60px;
+  border-radius: 50%;
+  background: #000;
+  opacity: 0.35;
+  filter: blur(4px);
+}
+.toss-result { display: flex; flex-direction: column; align-items: center; gap: 4px; animation: pop 0.4s ease-out; }
+.toss-winner { font-size: 1.2rem; font-weight: 800; color: var(--ink) !important; margin: 0 0 4px; white-space: pre-line; line-height: 1.5; }
+.ready.tossed .coin-stage { height: 150px; margin: -10px auto -6px; transform: scale(0.72); }
+.toss-result #ready-text { font-size: 0.9rem; margin: 0 0 12px; }
 .ready p { white-space: pre-line; }
 .ready p { color: var(--muted); line-height: 1.7; }
 
