@@ -1,0 +1,213 @@
+<!doctype html>
+<html lang="ja">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+  <meta name="theme-color" content="#14213d">
+  <title>ヒット&ブロー対戦</title>
+  <meta name="claude:viewport-fit-sides" content="cover">
+  <link rel="stylesheet" href="css/style.css">
+</head>
+<body>
+  <header class="topbar">
+    <h1 class="logo"><span class="logo-hit">ヒット</span>&amp;<span class="logo-blow">ブロー</span><small>2人対戦</small></h1>
+    <button class="icon-btn" id="btn-rules" type="button" aria-label="あそびかた">？</button>
+  </header>
+
+  <main id="app">
+    <!-- 1. 設定画面 -->
+    <section class="screen" id="screen-setup" hidden>
+      <div class="card intro">
+        <p><strong>コンピューターが決めた1つのお題</strong>を、2人が交互にコールして当てに行きます。
+        コールとヒントは<strong>2人とも丸見え</strong>。攻めすぎると相手にヒントをあげてしまうかも？</p>
+      </div>
+
+      <div class="card">
+        <h2>プレイヤー</h2>
+        <div class="players-form">
+          <label class="field p0">
+            <span>プレイヤー1</span>
+            <input id="name-0" maxlength="10" autocomplete="off" placeholder="プレイヤー1">
+          </label>
+          <span class="vs">VS</span>
+          <label class="field p1">
+            <span>プレイヤー2</span>
+            <input id="name-1" maxlength="10" autocomplete="off" placeholder="プレイヤー2">
+          </label>
+        </div>
+      </div>
+
+      <div class="card">
+        <h2>ルール設定</h2>
+        <div class="settings">
+          <label class="setting">
+            <span>ピンの数</span>
+            <select id="set-length">
+              <option value="3">3つ</option>
+              <option value="4">4つ</option>
+              <option value="5">5つ</option>
+            </select>
+          </label>
+          <label class="setting">
+            <span>種類の数</span>
+            <select id="set-colors">
+              <option value="4">4種類</option>
+              <option value="5">5種類</option>
+              <option value="6">6種類</option>
+              <option value="7">7種類</option>
+              <option value="8">8種類</option>
+            </select>
+          </label>
+          <label class="setting">
+            <span>コールできる回数</span>
+            <select id="set-turns">
+              <option value="5">各5回</option>
+              <option value="6">各6回</option>
+              <option value="8">各8回</option>
+              <option value="10">各10回</option>
+              <option value="0">無制限</option>
+            </select>
+          </label>
+          <label class="setting">
+            <span>持ち時間（1人あたり）</span>
+            <select id="set-bank">
+              <option value="0">なし</option>
+              <option value="60">1分</option>
+              <option value="120">2分</option>
+              <option value="180">3分</option>
+              <option value="300">5分</option>
+              <option value="600">10分</option>
+            </select>
+          </label>
+          <label class="setting">
+            <span>1回のコールの制限時間</span>
+            <select id="set-turnlimit">
+              <option value="0">なし</option>
+              <option value="15">15秒</option>
+              <option value="30">30秒</option>
+              <option value="60">60秒</option>
+            </select>
+          </label>
+          <label class="setting">
+            <span>ピンの見た目</span>
+            <select id="set-symbols">
+              <option value="number">数字（1〜8）</option>
+              <option value="color">色</option>
+            </select>
+          </label>
+          <label class="setting check">
+            <input type="checkbox" id="set-dup">
+            <span>同じものを何度も使える</span>
+          </label>
+        </div>
+        <p class="hint" id="setup-hint"></p>
+      </div>
+
+      <button class="btn primary big" id="btn-start" type="button">対戦スタート</button>
+    </section>
+
+    <!-- 2. コイントスで先攻・後攻を決める -->
+    <section class="screen center" id="screen-ready" hidden>
+      <div class="card ready" id="ready-card">
+        <h2 id="toss-title">コイントスで先攻を決めよう</h2>
+        <p class="toss-guide" id="toss-guide"></p>
+        <div class="coin-stage" id="coin-stage">
+          <div class="coin" id="coin" aria-hidden="true">
+            <div class="coin-face front p0"><small>表</small><span id="coin-name-0"></span></div>
+            <div class="coin-face back p1"><small>裏</small><span id="coin-name-1"></span></div>
+          </div>
+          <div class="coin-shadow" id="coin-shadow"></div>
+        </div>
+        <button class="btn primary big" id="btn-toss" type="button">コインを投げる</button>
+        <div class="toss-result" id="toss-result" hidden>
+          <p class="toss-winner" id="toss-winner" aria-live="polite"></p>
+          <p id="ready-text"></p>
+          <button class="btn primary big" id="btn-ready" type="button">対戦開始</button>
+        </div>
+      </div>
+    </section>
+
+    <!-- 3. 対戦画面 -->
+    <section class="screen" id="screen-game" hidden>
+      <div class="scorebar" id="scorebar"></div>
+      <div class="status" id="status" aria-live="polite"></div>
+      <div class="play">
+        <div class="card board" id="board"></div>
+        <div class="card guess-panel" id="guess-panel">
+          <div class="guess-head">
+            <h2 id="guess-title"></h2>
+            <span class="round" id="round-label"></span>
+          </div>
+          <div class="turn-timer" id="turn-timer" hidden>
+            <div class="turn-timer-track"><div class="turn-timer-bar" id="turn-timer-bar"></div></div>
+            <span id="turn-timer-text"></span>
+          </div>
+          <div class="code-input" id="guess-input"></div>
+          <div class="row-actions">
+            <button class="btn" id="btn-guess-clear" type="button">クリア</button>
+            <button class="btn primary" id="btn-guess" type="button">コール！</button>
+          </div>
+          <p class="error" id="guess-error" role="alert"></p>
+        </div>
+      </div>
+      <div class="card pause" id="pause-overlay" hidden>
+        <h2>一時停止中</h2>
+        <p>時計は止まっています。盤面は再開すると表示されます。</p>
+        <button class="btn primary big" id="btn-resume" type="button">再開する</button>
+      </div>
+      <div class="game-footer">
+        <button class="btn ghost small" id="btn-pause" type="button">一時停止</button>
+        <button class="btn ghost small" id="btn-quit" type="button">対戦をやめる</button>
+      </div>
+    </section>
+
+    <!-- 4. 結果画面 -->
+    <section class="screen" id="screen-result" hidden>
+      <div class="card result" id="result-card">
+        <div class="result-badge" id="result-badge" aria-hidden="true"></div>
+        <h2 id="result-title"></h2>
+        <p id="result-text"></p>
+        <div class="reveal">
+          <span>お題の答え</span>
+          <div id="result-secret"></div>
+        </div>
+        <div class="total" id="total"></div>
+      </div>
+      <div class="card board" id="result-board"></div>
+      <div class="row-actions stack">
+        <button class="btn primary big" id="btn-rematch" type="button">もう一度（コイントスから）</button>
+        <button class="btn" id="btn-back" type="button">設定にもどる</button>
+      </div>
+    </section>
+  </main>
+
+  <dialog id="rules">
+    <form method="dialog">
+      <h2>あそびかた</h2>
+      <ol>
+        <li>コイントスで先攻・後攻を決めます。</li>
+        <li>コンピューターが、数字（または色）の並び（<strong>お題</strong>）をランダムに1つ決めます。</li>
+        <li>2人で交互に、お題を予想して「コール」します。</li>
+        <li>コールするたびにヒントが出ます。
+          <ul>
+            <li><span class="pip hit"></span><strong>ヒット</strong>：数字（色）も位置も合っている</li>
+            <li><span class="pip blow"></span><strong>ブロー</strong>：数字（色）は合っているが位置がちがう</li>
+          </ul>
+        </li>
+        <li>先にお題を<strong>すべてヒット</strong>させた人の勝ち！</li>
+      </ol>
+      <h3>駆け引きのコツ</h3>
+      <p class="hint">コールもヒントも2人に見えています。自分のコールで答えがしぼれると、次の番の相手が先に当ててしまうかもしれません。
+      わざと情報を出しすぎないコールも作戦のうち。各コールのあとに答えの候補がいくつ残っていたかは、対戦が終わってから振り返れます。</p>
+      <h3>時間のルール</h3>
+      <p class="hint"><strong>持ち時間</strong>は自分の番の間だけ減っていき、0になったらその時点で負けです。
+      <strong>1回のコールの制限時間</strong>を過ぎると、その回はパス（コール1回分を使います）。
+      電話などで中断するときは「一時停止」を押してください。</p>
+      <p class="hint">どちらも当てられずにコール回数を使い切ったら引き分けです。</p>
+      <button class="btn primary" value="close">とじる</button>
+    </form>
+  </dialog>
+
+  <script type="module" src="js/app.js"></script>
+</body>
+</html>

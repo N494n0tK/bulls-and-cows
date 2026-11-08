@@ -1,0 +1,204 @@
+// ヒット&ブロー（2人対戦・共通のお題）のゲームロジック。DOM に依存しない純粋なモジュール。
+//
+// ルール：コンピューターがランダムに決めた1つのお題を、2人が交互にコールして当てに行く。
+// すべてのコールとヒントは2人ともに見えるので、自分のコールは相手へのヒントにもなる。
+// 先にお題をすべてヒットさせた人の勝ち。
+
+export const COLORS = [
+  { id: 0, name: 'あか', hex: '#e5484d', mark: '●' },
+  { id: 1, name: 'あお', hex: '#3e7bfa', mark: '▲' },
+  { id: 2, name: 'みどり', hex: '#30a46c', mark: '■' },
+  { id: 3, name: 'きいろ', hex: '#f5c518', mark: '◆' },
+  { id: 4, name: 'むらさき', hex: '#8e4ec6', mark: '★' },
+  { id: 5, name: 'オレンジ', hex: '#f76b15', mark: '♥' },
+  { id: 6, name: 'みずいろ', hex: '#12a5c4', mark: '✚' },
+  { id: 7, name: 'ちゃいろ', hex: '#8d6748', mark: '☾' },
+];
+
+export const DEFAULT_SETTINGS = Object.freeze({
+  length: 4, // お題の長さ（ピンの数）
+  colors: 6, // 使う種類（数字・色）の数
+  allowDuplicates: false, // 同じものの重複を許すか
+  maxTurns: 8, // 1人あたりのコール回数（0 = 無制限）。2人とも使い切ったら引き分け
+  symbols: 'number', // ピンの見た目：'number'（数字）または 'color'（色）
+  timeBank: 180, // 1人あたりの持ち時間（秒、0 = なし）。使い切ったら負け
+  turnLimit: 0, // 1回のコールの制限時間（秒、0 = なし）。過ぎたらパス
+});
+
+/** お題に対するコールの判定。hit = 色も位置も一致、blow = 色だけ一致。 */
+export function score(secret, guess) {
+  if (secret.length !== guess.length) throw new Error('長さが一致しません');
+  let hit = 0;
+  const restSecret = new Map();
+  const restGuess = new Map();
+  for (let i = 0; i < secret.length; i++) {
+    if (secret[i] === guess[i]) {
+      hit++;
+    } else {
+      restSecret.set(secret[i], (restSecret.get(secret[i]) ?? 0) + 1);
+      restGuess.set(guess[i], (restGuess.get(guess[i]) ?? 0) + 1);
+    }
+  }
+  let blow = 0;
+  for (const [color, n] of restGuess) blow += Math.min(n, restSecret.get(color) ?? 0);
+  return { hit, blow };
+}
+
+/** コードが設定に合っているかを調べ、問題があればその理由（日本語）を返す。正しければ null。 */
+export function validateCode(code, settings) {
+  if (!Array.isArray(code) || code.length !== settings.length || code.some((c) => c == null)) {
+    return `${settings.length}つすべてのマスを埋めてください`;
+  }
+  for (const c of code) {
+    if (!Number.isInteger(c) || c < 0 || c >= settings.colors) return '使えない数字・色が含まれています';
+  }
+  if (!settings.allowDuplicates && new Set(code).size !== code.length) {
+    return '同じものは1回しか使えません';
+  }
+  return null;
+}
+
+export function normalizeSettings(input = {}) {
+  const s = { ...DEFAULT_SETTINGS, ...input };
+  s.length = clampInt(s.length, 3, 5);
+  s.colors = clampInt(s.colors, 4, COLORS.length);
+  s.allowDuplicates = Boolean(s.allowDuplicates);
+  s.maxTurns = clampInt(s.maxTurns, 0, 30);
+  s.symbols = s.symbols === 'color' ? 'color' : 'number';
+  s.timeBank = clampInt(s.timeBank, 0, 3600);
+  s.turnLimit = clampInt(s.turnLimit, 0, 600);
+  // 重複なしなら、色の数はピンの数以上でなければお題が作れない
+  if (!s.allowDuplicates && s.colors < s.length) s.colors = s.length;
+  return s;
+}
+
+function clampInt(v, min, max) {
+  const n = Math.round(Number(v));
+  if (!Number.isFinite(n)) return min;
+  return Math.min(max, Math.max(min, n));
+}
+
+/** 設定に合うお題をランダムに作る。rng は 0 以上 1 未満を返す関数（テスト用に差し替え可）。 */
+export function randomCode(settings, rng = Math.random) {
+  const pool = [...Array(settings.colors).keys()];
+  const code = [];
+  for (let i = 0; i < settings.length; i++) {
+    const k = Math.floor(rng() * pool.length);
+    code.push(settings.allowDuplicates ? pool[k] : pool.splice(k, 1)[0]);
+  }
+  return code;
+}
+
+/** 設定に合うコードが全部で何通りあるか。 */
+export function countCodes(settings) {
+  let total = 1;
+  for (let i = 0; i < settings.length; i++) total *= settings.allowDuplicates ? settings.colors : settings.colors - i;
+  return total;
+}
+
+/**
+ * 新しい対戦を作る。
+ * names: [プレイヤー1の名前, プレイヤー2の名前]
+ * starter: 先攻プレイヤーの番号（0 または 1）
+ * secret: お題（省略するとランダム）
+ */
+export function createGame(settings, names, starter = 0, secret = null) {
+  const s = normalizeSettings(settings);
+  const code = secret ?? randomCode(s);
+  const err = validateCode(code, s);
+  if (err) throw new Error(err);
+  return {
+    settings: s,
+    names: [...names],
+    secret: [...code],
+    guesses: [], // { player, code, hit, blow } またはパス { player, pass: true }（2人ぶんを時系列で）
+    clocks: [s.timeBank * 1000, s.timeBank * 1000], // 残りの持ち時間（ミリ秒）
+    starter,
+    current: starter,
+    phase: 'playing', // playing → finished
+    result: null, // { winner: 0 | 1 | null, reason: 'solved' | 'out-of-turns' | 'time-up' }
+  };
+}
+
+/** 現在の手番プレイヤーがコールする。判定結果を返す。 */
+export function makeGuess(game, code) {
+  if (game.phase !== 'playing') throw new Error('いまはコールできません');
+  const err = validateCode(code, game.settings);
+  if (err) throw new Error(err);
+
+  const me = game.current;
+  const res = score(game.secret, code);
+  const entry = { player: me, code: [...code], ...res };
+  game.guesses.push(entry);
+  const solved = res.hit === game.settings.length;
+  if (solved) finish(game, me, 'solved');
+  else advance(game);
+  return { ...entry, solved };
+}
+
+/** 1回のコールの制限時間が過ぎたとき：コールせずにパス（コール1回分を使う）。 */
+export function passTurn(game) {
+  if (game.phase !== 'playing') throw new Error('いまはパスできません');
+  game.guesses.push({ player: game.current, pass: true });
+  advance(game);
+}
+
+/**
+ * 手番プレイヤーの持ち時間を ms だけ減らす。使い切ったらその人の負け。
+ * 持ち時間なしの設定では何もしない。持ち時間切れになったら true を返す。
+ */
+export function spendTime(game, ms) {
+  if (game.phase !== 'playing' || game.settings.timeBank === 0) return false;
+  const me = game.current;
+  game.clocks[me] = Math.max(0, game.clocks[me] - Math.max(0, ms));
+  if (game.clocks[me] === 0) {
+    finish(game, 1 - me, 'time-up');
+    return true;
+  }
+  return false;
+}
+
+function finish(game, winner, reason) {
+  game.phase = 'finished';
+  game.result = { winner, reason };
+}
+
+function advance(game) {
+  if (game.settings.maxTurns > 0 && game.guesses.length >= game.settings.maxTurns * 2) {
+    finish(game, null, 'out-of-turns');
+  } else {
+    game.current = 1 - game.current;
+  }
+}
+
+/** プレイヤー index がこれまでにコールした回数。 */
+export function callsBy(game, index) {
+  return game.guesses.filter((g) => g.player === index).length;
+}
+
+/** これまでのヒントすべてと矛盾しないコード（お題の候補）の数。 */
+export function countCandidates(game) {
+  const s = game.settings;
+  let n = 0;
+  const code = Array(s.length);
+  const used = new Set();
+  const walk = (i) => {
+    if (i === s.length) {
+      if (game.guesses.every((g) => {
+        if (g.pass) return true;
+        const r = score(code, g.code);
+        return r.hit === g.hit && r.blow === g.blow;
+      })) n++;
+      return;
+    }
+    for (let c = 0; c < s.colors; c++) {
+      if (!s.allowDuplicates && used.has(c)) continue;
+      code[i] = c;
+      used.add(c);
+      walk(i + 1);
+      used.delete(c);
+    }
+  };
+  walk(0);
+  return n;
+}
