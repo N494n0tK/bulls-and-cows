@@ -392,13 +392,27 @@ $('btn-guess').addEventListener('click', () => {
   }
 });
 
-$('btn-quit').addEventListener('click', () => {
-  if (confirm('対戦をやめて設定にもどりますか？')) {
-    app.game = null;
-    fillSetup();
-    show('screen-setup');
+// confirm() が使えない環境もあるので、2回押しで確認する
+let quitTimer;
+$('btn-quit').addEventListener('click', (e) => {
+  const btn = e.currentTarget;
+  if (!btn.classList.contains('confirm')) {
+    btn.classList.add('confirm');
+    btn.textContent = 'もう一度押すと対戦をやめます';
+    clearTimeout(quitTimer);
+    quitTimer = setTimeout(resetQuit, 3000);
+    return;
   }
+  resetQuit();
+  app.game = null;
+  fillSetup();
+  show('screen-setup');
 });
+function resetQuit() {
+  clearTimeout(quitTimer);
+  $('btn-quit').classList.remove('confirm');
+  $('btn-quit').textContent = '対戦をやめる';
+}
 
 // ---- 5. 結果画面 ----
 function finishMatch() {

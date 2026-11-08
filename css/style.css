@@ -43,7 +43,9 @@ body {
   justify-content: space-between;
   max-width: 980px;
   margin: 0 auto;
-  padding: 14px 16px 6px;
+  padding-block: 14px 6px;
+  padding-left: max(16px, env(safe-area-inset-left, 0px));
+  padding-right: max(16px, env(safe-area-inset-right, 0px));
 }
 .logo {
   margin: 0;
@@ -81,7 +83,9 @@ body {
 main {
   max-width: 980px;
   margin: 0 auto;
-  padding: 8px 16px 32px;
+  padding-block: 8px 32px;
+  padding-left: max(16px, env(safe-area-inset-left, 0px));
+  padding-right: max(16px, env(safe-area-inset-right, 0px));
 }
 .screen { display: flex; flex-direction: column; gap: 16px; }
 .screen[hidden] { display: none; }
@@ -121,6 +125,7 @@ main {
 .btn.primary:active { box-shadow: 0 0 0 transparent; transform: translateY(4px); }
 .btn.big { font-size: 1.15rem; padding: 16px 24px; }
 .btn.small { font-size: 0.85rem; padding: 8px 14px; }
+.btn.ghost.confirm { color: #fff; border-color: #ff8a6b; background: rgba(255, 107, 74, 0.25); }
 .btn.ghost { background: transparent; color: rgba(255, 255, 255, 0.75); border-color: rgba(255, 255, 255, 0.3); box-shadow: none; }
 #btn-start { background: linear-gradient(90deg, var(--p0), var(--p1)); border: 0; box-shadow: 0 5px 0 #0c1428; }
 
@@ -331,8 +336,8 @@ dialog form > .btn { display: block; margin: 16px auto 0; }
 .toast {
   position: fixed;
   left: 50%;
-  top: 16px;
-  transform: translate(-50%, -150%);
+  top: calc(16px + env(safe-area-inset-top, 0px));
+  transform: translate(-50%, -200%);
   background: #fff;
   color: var(--ink);
   font-weight: 800;
@@ -348,6 +353,9 @@ dialog form > .btn { display: block; margin: 16px auto 0; }
 .toast.big { background: #ffd23f; font-size: 1.2rem; }
 
 /* ---------- スマホ ---------- */
+@media (prefers-reduced-motion: reduce) {
+  *, *::before, *::after { animation: none !important; transition: none !important; }
+}
 @media (max-width: 720px) {
   .boards { grid-template-columns: 1fr; gap: 12px; }
   /* 手番のボードを上に */
