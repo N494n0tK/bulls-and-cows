@@ -3,10 +3,11 @@ import {
   DEFAULT_SETTINGS,
   normalizeSettings,
   validateCode,
+  countCodes,
   createGame,
-  setSecret,
   makeGuess,
-  currentRound,
+  callsBy,
+  countCandidates,
 } from './logic.js';
 
 const STORAGE_KEY = 'hit-and-blow-duel';
@@ -35,6 +36,7 @@ const app = {
   starter: 0, // 次の対戦の先攻
   wins: [0, 0, 0], // [P1勝ち, P2勝ち, 引き分け]
   game: null,
+  candidates: [], // 各コール後の残り候補数（先頭はコール前）
 };
 
 // ---- 画面切り替え ----
@@ -43,41 +45,43 @@ function show(screenId) {
   window.scrollTo({ top: 0 });
 }
 
+function el(tag, className, text) {
+  const e = document.createElement(tag);
+  if (className) e.className = className;
+  if (text != null) e.textContent = text;
+  return e;
+}
+
 // ---- 部品：ピン ----
 function peg(colorId, { size = '', hidden = false } = {}) {
-  const el = document.createElement('span');
-  el.className = `peg ${size}`;
+  const p = el('span', `peg ${size}`);
   if (hidden) {
-    el.classList.add('hidden-peg');
-    el.textContent = '?';
+    p.classList.add('hidden-peg');
+    p.textContent = '?';
   } else if (colorId == null) {
-    el.classList.add('empty');
+    p.classList.add('empty');
   } else {
     const c = COLORS[colorId];
-    el.style.setProperty('--peg', c.hex);
-    el.dataset.mark = c.mark;
-    el.title = c.name;
-    el.setAttribute('aria-label', c.name);
+    p.style.setProperty('--peg', c.hex);
+    p.dataset.mark = c.mark;
+    p.title = c.name;
+    p.setAttribute('aria-label', c.name);
   }
-  return el;
+  return p;
 }
 
 function codeRow(code, opts) {
-  const row = document.createElement('div');
-  row.className = 'pegs';
+  const row = el('div', 'pegs');
   for (const c of code) row.append(peg(c, opts));
   return row;
 }
 
 function pips(hit, blow, length) {
-  const box = document.createElement('div');
-  box.className = 'pips';
+  const box = el('div', 'pips');
   box.style.setProperty('--cols', Math.ceil(length / 2));
   box.setAttribute('aria-label', `${hit}ヒット ${blow}ブロー`);
   for (let i = 0; i < length; i++) {
-    const p = document.createElement('span');
-    p.className = `pip ${i < hit ? 'hit' : i < hit + blow ? 'blow' : ''}`;
-    box.append(p);
+    box.append(el('span', `pip ${i < hit ? 'hit' : i < hit + blow ? 'blow' : ''}`));
   }
   return box;
 }
@@ -88,10 +92,8 @@ function createCodeInput(root) {
   let slots = [];
   let active = 0;
 
-  const slotRow = document.createElement('div');
-  slotRow.className = 'slots';
-  const palette = document.createElement('div');
-  palette.className = 'palette';
+  const slotRow = el('div', 'slots');
+  const palette = el('div', 'palette');
   root.replaceChildren(slotRow, palette);
 
   function nextEmpty(from) {
@@ -105,9 +107,8 @@ function createCodeInput(root) {
   function render() {
     slotRow.replaceChildren();
     slots.forEach((c, i) => {
-      const b = document.createElement('button');
+      const b = el('button', `slot ${i === active ? 'active' : ''}`);
       b.type = 'button';
-      b.className = `slot ${i === active ? 'active' : ''}`;
       b.setAttribute('aria-label', `${i + 1}番目${c == null ? '（空）' : `：${COLORS[c].name}`}`);
       b.append(peg(c, { size: 'lg' }));
       b.addEventListener('click', () => {
@@ -121,9 +122,8 @@ function createCodeInput(root) {
     palette.replaceChildren();
     const used = new Set(slots.filter((c) => c != null));
     for (let c = 0; c < settings.colors; c++) {
-      const b = document.createElement('button');
+      const b = el('button', 'swatch');
       b.type = 'button';
-      b.className = 'swatch';
       b.append(peg(c, { size: 'lg' }));
       b.disabled = !settings.allowDuplicates && used.has(c);
       b.setAttribute('aria-label', COLORS[c].name);
@@ -147,31 +147,11 @@ function createCodeInput(root) {
       active = 0;
       render();
     },
-    set(code) {
-      slots = [...code];
-      active = -1;
-      render();
-    },
     value: () => [...slots],
-    isComplete: () => slots.every((c) => c != null),
   };
 }
 
-const secretInput = createCodeInput($('secret-input'));
 const guessInput = createCodeInput($('guess-input'));
-
-function randomCode(s) {
-  const pool = [...Array(s.colors).keys()];
-  const code = [];
-  for (let i = 0; i < s.length; i++) {
-    if (s.allowDuplicates) {
-      code.push(pool[Math.floor(Math.random() * pool.length)]);
-    } else {
-      code.push(pool.splice(Math.floor(Math.random() * pool.length), 1)[0]);
-    }
-  }
-  return code;
-}
 
 // ---- 1. 設定画面 ----
 function readSetup() {
@@ -181,7 +161,7 @@ function readSetup() {
     colors: $('set-colors').value,
     maxTurns: $('set-turns').value,
     allowDuplicates: $('set-dup').checked,
-    fairFinish: $('set-fair').checked,
+    showCandidates: $('set-cand').checked,
   });
 }
 
@@ -192,8 +172,9 @@ function fillSetup() {
   $('set-length').value = app.settings.length;
   $('set-colors').value = app.settings.colors;
   $('set-turns').value = app.settings.maxTurns;
+  if (!$('set-turns').value) $('set-turns').value = DEFAULT_SETTINGS.maxTurns; // 選択肢にない古い保存値
   $('set-dup').checked = app.settings.allowDuplicates;
-  $('set-fair').checked = app.settings.fairFinish;
+  $('set-cand').checked = app.settings.showCandidates;
   updateSetupHint();
 }
 
@@ -204,9 +185,7 @@ function updateSetupHint() {
     allowDuplicates: $('set-dup').checked,
   });
   if (String(s.colors) !== $('set-colors').value) $('set-colors').value = s.colors;
-  let total = 1;
-  for (let i = 0; i < s.length; i++) total *= s.allowDuplicates ? s.colors : s.colors - i;
-  $('setup-hint').textContent = `コードの組み合わせは全部で ${total.toLocaleString()} 通り`;
+  $('setup-hint').textContent = `お題の組み合わせは全部で ${countCodes(s).toLocaleString()} 通り`;
 }
 
 for (const id of ['set-length', 'set-colors', 'set-dup']) $(id).addEventListener('change', updateSetupHint);
@@ -219,149 +198,95 @@ $('btn-start').addEventListener('click', () => {
   startMatch();
 });
 
-// ---- 2. 受け渡し画面 ----
-let handoffNext = null;
-function handoff(title, text, next, { icon = '🙈', button = '準備OK' } = {}) {
-  $('handoff-title').textContent = title;
-  $('handoff-text').textContent = text;
-  document.querySelector('.handoff-icon').textContent = icon;
-  $('btn-handoff').textContent = button;
-  handoffNext = next;
-  show('screen-handoff');
-}
-$('btn-handoff').addEventListener('click', () => handoffNext?.());
-
-// ---- 3. 秘密のコード ----
-let secretFor = 0;
+// ---- 2. お題決定 ----
 function startMatch() {
   app.game = createGame(app.settings, app.names, app.starter);
-  askSecret(app.starter);
+  app.candidates = [countCodes(app.game.settings)];
+  $('ready-pegs').replaceChildren(codeRow(app.game.secret, { hidden: true }));
+  $('ready-text').textContent = `先攻は ${app.names[app.starter]} さん。画面を2人で見られる場所に置いて、交互にコールしましょう。`;
+  show('screen-ready');
 }
-
-function askSecret(i) {
-  const name = app.names[i];
-  handoff(
-    `${name}さんの番`,
-    `${name}さんに端末をわたしてください。ほかの人は画面を見ないでね。`,
-    () => {
-      secretFor = i;
-      $('secret-title').textContent = `${name}さんの秘密のコード`;
-      $('screen-secret').className = `screen p${i}`;
-      $('secret-error').textContent = '';
-      secretInput.reset(app.game.settings);
-      show('screen-secret');
-    },
-  );
-}
-
-$('btn-secret-random').addEventListener('click', () => secretInput.set(randomCode(app.game.settings)));
-$('btn-secret-clear').addEventListener('click', () => secretInput.reset(app.game.settings));
-$('btn-secret-ok').addEventListener('click', () => {
-  const code = secretInput.value();
-  const err = validateCode(code, app.game.settings);
-  if (err) {
-    $('secret-error').textContent = err;
-    return;
-  }
-  setSecret(app.game, secretFor, code);
-  secretInput.reset(app.game.settings); // 画面に残さない
-  if (app.game.phase === 'secret') {
-    askSecret(1 - secretFor);
-  } else {
-    const first = app.names[app.game.starter];
-    handoff(
-      'コードがそろいました！',
-      `画面を2人で見られる場所に置きましょう。先攻は ${first} さんです。`,
-      startPlaying,
-      { icon: '🎯', button: '対戦開始' },
-    );
-  }
-});
-
-// ---- 4. 対戦画面 ----
-function startPlaying() {
+$('btn-ready').addEventListener('click', () => {
   show('screen-game');
   prepareTurn();
-}
+});
 
+// ---- 3. 対戦画面 ----
 function prepareTurn() {
   guessInput.reset(app.game.settings);
   $('guess-error').textContent = '';
   renderGame();
 }
 
-function renderBoards(container, game, { reveal = false } = {}) {
+function renderBoard(container, game, { reveal = false } = {}) {
   container.replaceChildren();
-  // 先攻を左（上）に表示
-  const order = [game.starter, 1 - game.starter];
-  for (const i of order) {
-    const me = game.players[i];
-    const opp = game.players[1 - i];
-    const board = document.createElement('div');
-    board.className = `card board p${i}`;
-    if (game.phase === 'playing' && game.current === i) board.classList.add('turn');
-    if (game.result?.winner === i) board.classList.add('winner');
+  const s = game.settings;
 
-    const head = document.createElement('div');
-    head.className = 'board-head';
-    const title = document.createElement('h3');
-    const nameEl = document.createElement('span');
-    nameEl.className = 'board-name';
-    nameEl.textContent = me.name;
-    const tag = document.createElement('span');
-    tag.className = 'tag';
-    tag.textContent = i === game.starter ? '先攻' : '後攻';
-    title.append(nameEl, tag);
-    const sub = document.createElement('p');
-    sub.className = 'board-sub';
-    sub.textContent = `${opp.name}さんのコードを予想中`;
-    head.append(title, sub);
+  const head = el('div', 'board-head');
+  const titleBox = el('div', 'board-title');
+  titleBox.append(el('h2', '', 'お題'));
+  if (s.showCandidates) {
+    const left = app.candidates[app.candidates.length - 1];
+    const cand = el('p', `cand ${left <= 3 && !reveal ? 'danger' : ''}`);
+    cand.innerHTML = reveal ? '' : `残りの候補 <b>${left.toLocaleString()}</b> 通り`;
+    titleBox.append(cand);
+  }
+  head.append(titleBox, codeRow(game.secret, { hidden: !reveal }));
+  container.append(head);
 
-    const target = document.createElement('div');
-    target.className = 'target';
-    target.append(codeRow(opp.secret, { hidden: !reveal }));
-    head.append(target);
-    board.append(head);
-
-    const list = document.createElement('ol');
-    list.className = 'history';
-    const rows = game.settings.maxTurns || Math.max(me.guesses.length + 1, 4);
-    for (let r = 0; r < Math.max(rows, me.guesses.length); r++) {
-      const li = document.createElement('li');
-      const g = me.guesses[r];
-      const num = document.createElement('span');
-      num.className = 'num';
-      num.textContent = r + 1;
-      li.append(num);
-      if (g) {
-        li.append(codeRow(g.code, { size: 'sm' }), pips(g.hit, g.blow, game.settings.length));
-        const txt = document.createElement('span');
-        txt.className = 'hb-text';
-        txt.innerHTML = `<b>${g.hit}</b>H <b>${g.blow}</b>B`;
-        li.append(txt);
-        if (g.hit === game.settings.length) li.classList.add('solved');
-        if (r === me.guesses.length - 1 && game.phase === 'playing' && game.current !== i) li.classList.add('latest');
-      } else {
-        li.classList.add('blank');
-        li.append(codeRow(Array(game.settings.length).fill(null), { size: 'sm' }));
-      }
-      list.append(li);
+  const list = el('ol', 'history');
+  game.guesses.forEach((g, r) => {
+    const li = el('li', `p${g.player}`);
+    li.append(el('span', 'num', r + 1), el('span', 'who', game.names[g.player]));
+    li.append(codeRow(g.code, { size: 'sm' }), pips(g.hit, g.blow, s.length));
+    const txt = el('span', 'hb-text');
+    txt.innerHTML = `<b>${g.hit}</b>H <b>${g.blow}</b>B`;
+    li.append(txt);
+    if (s.showCandidates) {
+      const n = app.candidates[r + 1];
+      li.append(el('span', `left ${n <= 3 ? 'danger' : ''}`, g.hit === s.length ? '正解' : `のこり${n}`));
     }
-    board.append(list);
-    container.append(board);
+    if (g.hit === s.length) li.classList.add('solved');
+    if (r === game.guesses.length - 1 && !reveal) li.classList.add('latest');
+    list.append(li);
+  });
+  if (game.phase === 'playing') {
+    const li = el('li', `blank p${game.current}`);
+    li.append(el('span', 'num', game.guesses.length + 1), el('span', 'who', game.names[game.current]));
+    li.append(codeRow(Array(s.length).fill(null), { size: 'sm' }));
+    list.append(li);
+  }
+  if (!game.guesses.length && game.phase === 'playing') {
+    list.prepend(el('li', 'empty-note', 'まだコールはありません。最初のコールで様子を見よう！'));
+  }
+  container.append(list);
+}
+
+function renderScorebar() {
+  const g = app.game;
+  const bar = $('scorebar');
+  bar.replaceChildren();
+  for (const i of [g.starter, 1 - g.starter]) {
+    const chip = el('div', `player-chip p${i} ${g.phase === 'playing' && g.current === i ? 'turn' : ''}`);
+    chip.append(el('span', 'chip-name', g.names[i]), el('span', 'chip-tag', i === g.starter ? '先攻' : '後攻'));
+    const max = g.settings.maxTurns;
+    chip.append(el('span', 'chip-left', max ? `残り ${max - callsBy(g, i)} 回` : `${callsBy(g, i)} 回コール`));
+    bar.append(chip);
   }
 }
 
 function renderGame() {
   const g = app.game;
   const cur = g.current;
-  const name = g.players[cur].name;
-  renderBoards($('boards'), g);
+  const name = g.names[cur];
+  renderScorebar();
+  renderBoard($('board'), g);
 
   const status = $('status');
   status.className = `status p${cur}`;
-  if (g.pendingWinner !== null) {
-    status.textContent = `${g.players[g.pendingWinner].name}さんが正解！ ${name}さん、最後のチャンス！`;
+  const left = app.candidates[app.candidates.length - 1];
+  if (g.settings.showCandidates && left === 1) {
+    status.textContent = `答えは1つにしぼれた！ ${name}さん、決めるチャンス！`;
     status.classList.add('alert');
   } else {
     status.textContent = `${name}さんの番です`;
@@ -370,7 +295,8 @@ function renderGame() {
   $('guess-panel').className = `card guess-panel p${cur}`;
   $('guess-title').textContent = `${name}さんのコール`;
   const max = g.settings.maxTurns;
-  $('round-label').textContent = max ? `${currentRound(g)} / ${max} 回目` : `${currentRound(g)} 回目`;
+  const n = callsBy(g, cur) + 1;
+  $('round-label').textContent = max ? `${n} / ${max} 回目` : `${n} 回目`;
 }
 
 $('btn-guess-clear').addEventListener('click', () => guessInput.reset(app.game.settings));
@@ -382,13 +308,18 @@ $('btn-guess').addEventListener('click', () => {
     $('guess-error').textContent = err;
     return;
   }
-  const who = g.players[g.current].name;
+  const who = g.names[g.current];
   const res = makeGuess(g, code);
+  app.candidates.push(res.solved ? 1 : countCandidates(g));
   toast(res.solved ? `${who}さん、全部ヒット！` : `${who}さん：${res.hit}ヒット ${res.blow}ブロー`, res.solved);
   if (g.phase === 'finished') {
+    renderScorebar();
+    renderBoard($('board'), g);
     finishMatch();
   } else {
     prepareTurn();
+    // 最新のコールと入力欄が見えるように
+    $('guess-panel').scrollIntoView({ block: 'nearest', behavior: 'smooth' });
   }
 });
 
@@ -414,43 +345,32 @@ function resetQuit() {
   $('btn-quit').textContent = '対戦をやめる';
 }
 
-// ---- 5. 結果画面 ----
+// ---- 4. 結果画面 ----
 function finishMatch() {
   const g = app.game;
-  const { winner, reason } = g.result;
+  const { winner } = g.result;
   if (winner === null) app.wins[2]++;
   else app.wins[winner]++;
 
-  const card = document.querySelector('#screen-result .result');
-  card.className = `card result ${winner === null ? 'draw' : `p${winner}`}`;
+  $('result-card').className = `card result ${winner === null ? 'draw' : `p${winner}`}`;
   if (winner === null) {
     $('result-badge').textContent = '🤝';
     $('result-title').textContent = '引き分け！';
-    $('result-text').textContent =
-      reason === 'both-solved'
-        ? '2人とも同じ回数で当てました。いい勝負！'
-        : '回数を使い切りました。どちらも当てられず…';
+    $('result-text').textContent = 'コール回数を使い切りました。2人とも当てられず…';
   } else {
-    const turns = g.players[winner].guesses.length;
     $('result-badge').textContent = '🏆';
-    $('result-title').textContent = `${g.players[winner].name}さんの勝ち！`;
-    $('result-text').textContent = `${turns}回目のコールでコードを当てました。`;
+    $('result-title').textContent = `${g.names[winner]}さんの勝ち！`;
+    const loser = g.names[1 - winner];
+    const prev = g.guesses[g.guesses.length - 2];
+    const helped = prev && prev.player === 1 - winner && app.candidates[g.guesses.length - 1] <= 3;
+    $('result-text').textContent = helped
+      ? `${loser}さんのコールで候補がしぼれたところを、すかさず当てました！`
+      : `全体の${g.guesses.length}コール目で、お題を当てました。`;
   }
-
-  const reveal = $('result-reveal');
-  reveal.replaceChildren();
-  for (const i of [0, 1]) {
-    const box = document.createElement('div');
-    box.className = `reveal-item p${i}`;
-    const label = document.createElement('span');
-    label.textContent = `${g.players[i].name}さんのコード`;
-    box.append(label, codeRow(g.players[i].secret));
-    reveal.append(box);
-  }
-
-  $('score-board').textContent = `通算成績　${app.names[0]} ${app.wins[0]}勝 ／ ${app.names[1]} ${app.wins[1]}勝 ／ 引き分け ${app.wins[2]}`;
-  renderBoards($('result-boards'), g, { reveal: true });
-  setTimeout(() => show('screen-result'), 600);
+  $('result-secret').replaceChildren(codeRow(g.secret, { size: 'lg' }));
+  $('total').textContent = `通算成績　${app.names[0]} ${app.wins[0]}勝 ／ ${app.names[1]} ${app.wins[1]}勝 ／ 引き分け ${app.wins[2]}`;
+  renderBoard($('result-board'), g, { reveal: true });
+  setTimeout(() => show('screen-result'), 700);
 }
 
 $('btn-rematch').addEventListener('click', () => {
@@ -465,18 +385,17 @@ $('btn-back').addEventListener('click', () => {
 // ---- トースト ----
 let toastTimer;
 function toast(text, big = false) {
-  let el = document.querySelector('.toast');
-  if (!el) {
-    el = document.createElement('div');
-    el.className = 'toast';
-    el.setAttribute('role', 'status');
-    document.body.append(el);
+  let t = document.querySelector('.toast');
+  if (!t) {
+    t = el('div', 'toast');
+    t.setAttribute('role', 'status');
+    document.body.append(t);
   }
-  el.textContent = text;
-  el.classList.toggle('big', big);
-  el.classList.add('show');
+  t.textContent = text;
+  t.classList.toggle('big', big);
+  t.classList.add('show');
   clearTimeout(toastTimer);
-  toastTimer = setTimeout(() => el.classList.remove('show'), 1800);
+  toastTimer = setTimeout(() => t.classList.remove('show'), 1800);
 }
 
 // ---- あそびかた ----

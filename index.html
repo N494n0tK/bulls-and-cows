@@ -17,6 +17,11 @@
   <main id="app">
     <!-- 1. 設定画面 -->
     <section class="screen" id="screen-setup" hidden>
+      <div class="card intro">
+        <p><strong>コンピューターが決めた1つのお題</strong>を、2人が交互にコールして当てに行きます。
+        コールとヒントは<strong>2人とも丸見え</strong>。攻めすぎると相手にヒントをあげてしまうかも？</p>
+      </div>
+
       <div class="card">
         <h2>プレイヤー</h2>
         <div class="players-form">
@@ -54,12 +59,12 @@
             </select>
           </label>
           <label class="setting">
-            <span>回答できる回数</span>
+            <span>コールできる回数</span>
             <select id="set-turns">
+              <option value="5">各5回</option>
               <option value="6">各6回</option>
               <option value="8">各8回</option>
               <option value="10">各10回</option>
-              <option value="12">各12回</option>
               <option value="0">無制限</option>
             </select>
           </label>
@@ -68,8 +73,8 @@
             <span>同じ色を何度も使える</span>
           </label>
           <label class="setting check">
-            <input type="checkbox" id="set-fair">
-            <span>先攻が当てたら後攻にも最後のチャンス</span>
+            <input type="checkbox" id="set-cand">
+            <span>残りの候補数を表示する</span>
           </label>
         </div>
         <p class="hint" id="setup-hint"></p>
@@ -78,62 +83,53 @@
       <button class="btn primary big" id="btn-start" type="button">対戦スタート</button>
     </section>
 
-    <!-- 2. 端末の受け渡し画面 -->
-    <section class="screen center" id="screen-handoff" hidden>
-      <div class="card handoff">
-        <div class="handoff-icon" aria-hidden="true">🙈</div>
-        <h2 id="handoff-title"></h2>
-        <p id="handoff-text"></p>
-        <button class="btn primary big" id="btn-handoff" type="button">準備OK</button>
+    <!-- 2. お題決定 -->
+    <section class="screen center" id="screen-ready" hidden>
+      <div class="card ready">
+        <div class="ready-pegs" id="ready-pegs" aria-hidden="true"></div>
+        <h2>お題が決まりました！</h2>
+        <p id="ready-text"></p>
+        <button class="btn primary big" id="btn-ready" type="button">対戦開始</button>
       </div>
     </section>
 
-    <!-- 3. 秘密のコード設定 -->
-    <section class="screen" id="screen-secret" hidden>
-      <div class="card">
-        <h2 id="secret-title"></h2>
-        <p class="hint">相手に見えないように、当ててもらう色の並びを決めましょう。</p>
-        <div class="code-input" id="secret-input"></div>
-        <div class="row-actions">
-          <button class="btn" id="btn-secret-random" type="button">おまかせ</button>
-          <button class="btn" id="btn-secret-clear" type="button">クリア</button>
-          <button class="btn primary" id="btn-secret-ok" type="button">これに決定</button>
-        </div>
-        <p class="error" id="secret-error" role="alert"></p>
-      </div>
-    </section>
-
-    <!-- 4. 対戦画面 -->
+    <!-- 3. 対戦画面 -->
     <section class="screen" id="screen-game" hidden>
+      <div class="scorebar" id="scorebar"></div>
       <div class="status" id="status" aria-live="polite"></div>
-      <div class="boards" id="boards"></div>
-      <div class="card guess-panel" id="guess-panel">
-        <div class="guess-head">
-          <h2 id="guess-title"></h2>
-          <span class="round" id="round-label"></span>
+      <div class="play">
+        <div class="card board" id="board"></div>
+        <div class="card guess-panel" id="guess-panel">
+          <div class="guess-head">
+            <h2 id="guess-title"></h2>
+            <span class="round" id="round-label"></span>
+          </div>
+          <div class="code-input" id="guess-input"></div>
+          <div class="row-actions">
+            <button class="btn" id="btn-guess-clear" type="button">クリア</button>
+            <button class="btn primary" id="btn-guess" type="button">コール！</button>
+          </div>
+          <p class="error" id="guess-error" role="alert"></p>
         </div>
-        <div class="code-input" id="guess-input"></div>
-        <div class="row-actions">
-          <button class="btn" id="btn-guess-clear" type="button">クリア</button>
-          <button class="btn primary" id="btn-guess" type="button">コール！</button>
-        </div>
-        <p class="error" id="guess-error" role="alert"></p>
       </div>
       <div class="game-footer">
         <button class="btn ghost small" id="btn-quit" type="button">対戦をやめる</button>
       </div>
     </section>
 
-    <!-- 5. 結果画面 -->
+    <!-- 4. 結果画面 -->
     <section class="screen" id="screen-result" hidden>
-      <div class="card result">
+      <div class="card result" id="result-card">
         <div class="result-badge" id="result-badge" aria-hidden="true"></div>
         <h2 id="result-title"></h2>
         <p id="result-text"></p>
-        <div class="reveal" id="result-reveal"></div>
-        <div class="score-board" id="score-board"></div>
+        <div class="reveal">
+          <span>お題の答え</span>
+          <div id="result-secret"></div>
+        </div>
+        <div class="total" id="total"></div>
       </div>
-      <div class="boards" id="result-boards"></div>
+      <div class="card board" id="result-board"></div>
       <div class="row-actions stack">
         <button class="btn primary big" id="btn-rematch" type="button">もう一度（先攻・後攻を交代）</button>
         <button class="btn" id="btn-back" type="button">設定にもどる</button>
@@ -145,18 +141,20 @@
     <form method="dialog">
       <h2>あそびかた</h2>
       <ol>
-        <li>おたがいに、相手に見えないように<strong>色の並び（秘密のコード）</strong>を決めます。</li>
-        <li>先攻・後攻で交互に、相手のコードを予想して「コール」します。</li>
-        <li>予想するたびに、ヒントが出ます。
+        <li>コンピューターが、色の並び（<strong>お題</strong>）をランダムに1つ決めます。</li>
+        <li>2人で交互に、お題を予想して「コール」します。</li>
+        <li>コールするたびにヒントが出ます。
           <ul>
             <li><span class="pip hit"></span><strong>ヒット</strong>：色も位置も合っている</li>
             <li><span class="pip blow"></span><strong>ブロー</strong>：色は合っているが位置がちがう</li>
           </ul>
         </li>
-        <li>先に相手のコードを<strong>すべてヒット</strong>させた人の勝ち！</li>
+        <li>先にお題を<strong>すべてヒット</strong>させた人の勝ち！</li>
       </ol>
-      <p class="hint">相手の予想とヒントも画面に出ています。相手がどこまで迫っているかも見ながら作戦を立てましょう。<br>
-      「最後のチャンス」ありのときは、先攻が当てても後攻にもう1回だけ回答のチャンスがあり、後攻も当てれば引き分けです。</p>
+      <h3>駆け引きのコツ</h3>
+      <p class="hint">コールもヒントも2人に見えています。自分のコールで答えがしぼれると、次の番の相手が先に当ててしまうかもしれません。
+      「残りの候補」が少なくなってきたら要注意。わざと情報を出しすぎないコールも作戦のうちです。</p>
+      <p class="hint">どちらも当てられずにコール回数を使い切ったら引き分けです。</p>
       <button class="btn primary" value="close">とじる</button>
     </form>
   </dialog>

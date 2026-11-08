@@ -1,4 +1,8 @@
-// ヒット&ブロー（2人対戦）のゲームロジック。DOM に依存しない純粋なモジュール。
+// ヒット&ブロー（2人対戦・共通のお題）のゲームロジック。DOM に依存しない純粋なモジュール。
+//
+// ルール：コンピューターがランダムに決めた1つのお題を、2人が交互にコールして当てに行く。
+// すべてのコールとヒントは2人ともに見えるので、自分のコールは相手へのヒントにもなる。
+// 先にお題をすべてヒットさせた人の勝ち。
 
 export const COLORS = [
   { id: 0, name: 'あか', hex: '#e5484d', mark: '●' },
@@ -12,14 +16,14 @@ export const COLORS = [
 ];
 
 export const DEFAULT_SETTINGS = Object.freeze({
-  length: 4, // コードの長さ（ピンの数）
+  length: 4, // お題の長さ（ピンの数）
   colors: 6, // 使う色の数
   allowDuplicates: false, // 同じ色の重複を許すか
-  maxTurns: 10, // 1人あたりの最大回答回数（0 = 無制限）
-  fairFinish: true, // 先攻が当てたら後攻にも同じ回数のチャンスを与える
+  maxTurns: 8, // 1人あたりのコール回数（0 = 無制限）。2人とも使い切ったら引き分け
+  showCandidates: true, // 残りの候補数を表示する（どれだけ答えに近づいたかの目安）
 });
 
-/** 秘密のコードに対する推測の判定。hit = 色も位置も一致、blow = 色だけ一致。 */
+/** お題に対するコールの判定。hit = 色も位置も一致、blow = 色だけ一致。 */
 export function score(secret, guess) {
   if (secret.length !== guess.length) throw new Error('長さが一致しません');
   let hit = 0;
@@ -40,7 +44,7 @@ export function score(secret, guess) {
 
 /** コードが設定に合っているかを調べ、問題があればその理由（日本語）を返す。正しければ null。 */
 export function validateCode(code, settings) {
-  if (!Array.isArray(code) || code.length !== settings.length) {
+  if (!Array.isArray(code) || code.length !== settings.length || code.some((c) => c == null)) {
     return `${settings.length}つすべてのマスに色を入れてください`;
   }
   for (const c of code) {
@@ -58,8 +62,8 @@ export function normalizeSettings(input = {}) {
   s.colors = clampInt(s.colors, 4, COLORS.length);
   s.allowDuplicates = Boolean(s.allowDuplicates);
   s.maxTurns = clampInt(s.maxTurns, 0, 30);
-  s.fairFinish = Boolean(s.fairFinish);
-  // 重複なしなら、色の数はピンの数以上でなければコードが作れない
+  s.showCandidates = Boolean(s.showCandidates);
+  // 重複なしなら、色の数はピンの数以上でなければお題が作れない
   if (!s.allowDuplicates && s.colors < s.length) s.colors = s.length;
   return s;
 }
@@ -70,74 +74,98 @@ function clampInt(v, min, max) {
   return Math.min(max, Math.max(min, n));
 }
 
+/** 設定に合うお題をランダムに作る。rng は 0 以上 1 未満を返す関数（テスト用に差し替え可）。 */
+export function randomCode(settings, rng = Math.random) {
+  const pool = [...Array(settings.colors).keys()];
+  const code = [];
+  for (let i = 0; i < settings.length; i++) {
+    const k = Math.floor(rng() * pool.length);
+    code.push(settings.allowDuplicates ? pool[k] : pool.splice(k, 1)[0]);
+  }
+  return code;
+}
+
+/** 設定に合うコードが全部で何通りあるか。 */
+export function countCodes(settings) {
+  let total = 1;
+  for (let i = 0; i < settings.length; i++) total *= settings.allowDuplicates ? settings.colors : settings.colors - i;
+  return total;
+}
+
 /**
  * 新しい対戦を作る。
  * names: [プレイヤー1の名前, プレイヤー2の名前]
  * starter: 先攻プレイヤーの番号（0 または 1）
+ * secret: お題（省略するとランダム）
  */
-export function createGame(settings, names, starter = 0) {
+export function createGame(settings, names, starter = 0, secret = null) {
+  const s = normalizeSettings(settings);
+  const code = secret ?? randomCode(s);
+  const err = validateCode(code, s);
+  if (err) throw new Error(err);
   return {
-    settings: normalizeSettings(settings),
-    players: names.map((name) => ({ name, secret: null, guesses: [] })),
+    settings: s,
+    names: [...names],
+    secret: [...code],
+    guesses: [], // { player, code, hit, blow }（2人ぶんを時系列で）
     starter,
     current: starter,
-    phase: 'secret', // secret → playing → finished
-    pendingWinner: null, // 先攻が正解し、後攻が最後のチャンス中のとき先攻の番号
-    result: null, // { winner: 0 | 1 | null, reason }
+    phase: 'playing', // playing → finished
+    result: null, // { winner: 0 | 1 | null, reason: 'solved' | 'out-of-turns' }
   };
 }
 
-/** プレイヤー index の秘密のコードを登録する。両者そろえば対戦開始。 */
-export function setSecret(game, index, code) {
-  if (game.phase !== 'secret') throw new Error('いまはコードを設定できません');
-  const err = validateCode(code, game.settings);
-  if (err) throw new Error(err);
-  game.players[index].secret = [...code];
-  if (game.players.every((p) => p.secret)) game.phase = 'playing';
-  return game;
-}
-
-/** 現在の手番プレイヤーが相手のコードを推測する。判定結果を返す。 */
+/** 現在の手番プレイヤーがコールする。判定結果を返す。 */
 export function makeGuess(game, code) {
-  if (game.phase !== 'playing') throw new Error('いまは推測できません');
+  if (game.phase !== 'playing') throw new Error('いまはコールできません');
   const err = validateCode(code, game.settings);
   if (err) throw new Error(err);
 
   const me = game.current;
-  const opp = 1 - me;
-  const second = 1 - game.starter;
-  const res = score(game.players[opp].secret, code);
-  const entry = { code: [...code], ...res };
-  game.players[me].guesses.push(entry);
+  const res = score(game.secret, code);
+  const entry = { player: me, code: [...code], ...res };
+  game.guesses.push(entry);
   const solved = res.hit === game.settings.length;
 
-  const finish = (winner, reason) => {
+  if (solved) {
     game.phase = 'finished';
-    game.result = { winner, reason };
-  };
-
-  if (me === game.starter) {
-    if (solved && !game.settings.fairFinish) {
-      finish(me, 'solved');
-    } else {
-      if (solved) game.pendingWinner = me; // 後攻に最後のチャンス
-      game.current = second;
-    }
-  } else if (game.pendingWinner !== null) {
-    // 後攻の最後のチャンス
-    if (solved) finish(null, 'both-solved');
-    else finish(game.pendingWinner, 'solved');
-  } else if (solved) {
-    finish(me, 'solved');
-  } else if (game.settings.maxTurns > 0 && game.players[me].guesses.length >= game.settings.maxTurns) {
-    finish(null, 'out-of-turns');
+    game.result = { winner: me, reason: 'solved' };
+  } else if (game.settings.maxTurns > 0 && game.guesses.length >= game.settings.maxTurns * 2) {
+    game.phase = 'finished';
+    game.result = { winner: null, reason: 'out-of-turns' };
   } else {
-    game.current = game.starter;
+    game.current = 1 - me;
   }
   return { ...entry, solved };
 }
 
-/** 現在のラウンド番号（1 始まり）。 */
-export function currentRound(game) {
-  return game.players[game.current].guesses.length + 1;
+/** プレイヤー index がこれまでにコールした回数。 */
+export function callsBy(game, index) {
+  return game.guesses.filter((g) => g.player === index).length;
+}
+
+/** これまでのヒントすべてと矛盾しないコード（お題の候補）の数。 */
+export function countCandidates(game) {
+  const s = game.settings;
+  let n = 0;
+  const code = Array(s.length);
+  const used = new Set();
+  const walk = (i) => {
+    if (i === s.length) {
+      if (game.guesses.every((g) => {
+        const r = score(code, g.code);
+        return r.hit === g.hit && r.blow === g.blow;
+      })) n++;
+      return;
+    }
+    for (let c = 0; c < s.colors; c++) {
+      if (!s.allowDuplicates && used.has(c)) continue;
+      code[i] = c;
+      used.add(c);
+      walk(i + 1);
+      used.delete(c);
+    }
+  };
+  walk(0);
+  return n;
 }

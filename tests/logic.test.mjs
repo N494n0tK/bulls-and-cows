@@ -4,10 +4,12 @@ import {
   score,
   validateCode,
   normalizeSettings,
+  randomCode,
+  countCodes,
   createGame,
-  setSecret,
   makeGuess,
-  currentRound,
+  callsBy,
+  countCandidates,
 } from '../js/logic.js';
 
 test('score: ヒットとブローを数える', () => {
@@ -27,84 +29,97 @@ test('validateCode', () => {
   const s = normalizeSettings({ length: 4, colors: 6, allowDuplicates: false });
   assert.equal(validateCode([0, 1, 2, 3], s), null);
   assert.match(validateCode([0, 1, 2], s), /4つ/);
+  assert.match(validateCode([0, 1, null, 3], s), /4つ/);
   assert.match(validateCode([0, 1, 1, 3], s), /同じ色/);
   assert.match(validateCode([0, 1, 2, 6], s), /使えない色/);
   assert.equal(validateCode([1, 1, 1, 1], { ...s, allowDuplicates: true }), null);
 });
 
 test('normalizeSettings: 重複なしなら色数はピン数以上', () => {
-  const s = normalizeSettings({ length: 5, colors: 4, allowDuplicates: false });
-  assert.equal(s.colors, 5);
+  assert.equal(normalizeSettings({ length: 5, colors: 4, allowDuplicates: false }).colors, 5);
 });
 
-function newGame(settings) {
-  const g = createGame(settings, ['A', 'B'], 0);
-  setSecret(g, 0, [0, 1, 2, 3]); // A の秘密（B が当てる）
-  setSecret(g, 1, [3, 2, 1, 0]); // B の秘密（A が当てる）
-  return g;
-}
+test('randomCode: 設定どおりのお題ができる', () => {
+  for (const dup of [false, true]) {
+    const s = normalizeSettings({ length: 5, colors: 7, allowDuplicates: dup });
+    for (let i = 0; i < 200; i++) assert.equal(validateCode(randomCode(s), s), null);
+  }
+  const s = normalizeSettings({ length: 4, colors: 6 });
+  assert.deepEqual(randomCode(s, () => 0), [0, 1, 2, 3]);
+});
 
-test('交互に手番が回る', () => {
-  const g = newGame();
+test('countCodes', () => {
+  assert.equal(countCodes(normalizeSettings({ length: 4, colors: 6 })), 360);
+  assert.equal(countCodes(normalizeSettings({ length: 4, colors: 6, allowDuplicates: true })), 1296);
+});
+
+const SECRET = [0, 1, 2, 3];
+
+test('お題は1つ。2人が交互にコールし、履歴は共通', () => {
+  const g = createGame({}, ['A', 'B'], 0, SECRET);
   assert.equal(g.phase, 'playing');
   assert.equal(g.current, 0);
-  makeGuess(g, [0, 1, 2, 3]);
+  const r = makeGuess(g, [3, 2, 1, 0]);
+  assert.deepEqual([r.hit, r.blow, r.solved], [0, 4, false]);
   assert.equal(g.current, 1);
-  makeGuess(g, [1, 2, 3, 4]);
+  makeGuess(g, [0, 1, 4, 5]);
   assert.equal(g.current, 0);
-  assert.equal(currentRound(g), 2);
+  assert.deepEqual(g.guesses.map((x) => [x.player, x.hit, x.blow]), [[0, 0, 4], [1, 2, 0]]);
+  assert.equal(callsBy(g, 0), 1);
+  assert.equal(callsBy(g, 1), 1);
 });
 
-test('後攻が先に当てたら後攻の勝ち', () => {
-  const g = newGame();
-  makeGuess(g, [0, 1, 2, 4]);
-  const r = makeGuess(g, [0, 1, 2, 3]);
+test('先に当てた人がその場で勝ち（後攻）', () => {
+  const g = createGame({}, ['A', 'B'], 0, SECRET);
+  makeGuess(g, [0, 1, 3, 2]); // A は 2H2B で惜しい…
+  const r = makeGuess(g, [0, 1, 2, 3]); // それを見た B が正解
   assert.equal(r.solved, true);
-  assert.equal(g.phase, 'finished');
   assert.deepEqual(g.result, { winner: 1, reason: 'solved' });
+  assert.throws(() => makeGuess(g, [0, 1, 2, 3]), /コールできません/);
 });
 
-test('先攻が当てても後攻に最後のチャンス（外せば先攻の勝ち）', () => {
-  const g = newGame();
-  makeGuess(g, [3, 2, 1, 0]);
-  assert.equal(g.phase, 'playing');
-  assert.equal(g.pendingWinner, 0);
+test('先に当てた人がその場で勝ち（先攻）', () => {
+  const g = createGame({}, ['A', 'B'], 1, SECRET);
+  assert.equal(g.current, 1);
   makeGuess(g, [5, 4, 3, 2]);
-  assert.deepEqual(g.result, { winner: 0, reason: 'solved' });
-});
-
-test('先攻・後攻が同じラウンドで当てたら引き分け', () => {
-  const g = newGame();
-  makeGuess(g, [3, 2, 1, 0]);
   makeGuess(g, [0, 1, 2, 3]);
-  assert.deepEqual(g.result, { winner: null, reason: 'both-solved' });
-});
-
-test('fairFinish なしなら先攻が当てた時点で勝ち', () => {
-  const g = newGame({ fairFinish: false });
-  makeGuess(g, [3, 2, 1, 0]);
   assert.deepEqual(g.result, { winner: 0, reason: 'solved' });
 });
 
-test('回数切れで引き分け', () => {
-  const g = newGame({ maxTurns: 2 });
-  for (let i = 0; i < 4; i++) makeGuess(g, [4, 5, 0, 1]);
+test('2人ともコール回数を使い切ったら引き分け', () => {
+  const g = createGame({ maxTurns: 2 }, ['A', 'B'], 0, SECRET);
+  for (let i = 0; i < 3; i++) makeGuess(g, [4, 5, 0, 1]);
+  assert.equal(g.phase, 'playing');
+  makeGuess(g, [4, 5, 0, 1]);
   assert.deepEqual(g.result, { winner: null, reason: 'out-of-turns' });
 });
 
-test('後攻スタートでも正しく動く', () => {
-  const g = createGame({}, ['A', 'B'], 1);
-  setSecret(g, 0, [0, 1, 2, 3]);
-  setSecret(g, 1, [3, 2, 1, 0]);
-  assert.equal(g.current, 1);
-  makeGuess(g, [0, 1, 2, 3]); // B が正解 → A に最後のチャンス
+test('不正なコールは拒否して手番も進まない', () => {
+  const g = createGame({}, ['A', 'B'], 0, SECRET);
+  assert.throws(() => makeGuess(g, [0, 0, 1, 2]), /同じ色/);
+  assert.equal(g.guesses.length, 0);
   assert.equal(g.current, 0);
-  makeGuess(g, [0, 1, 2, 3]); // A は外す
-  assert.deepEqual(g.result, { winner: 1, reason: 'solved' });
 });
 
-test('不正な推測は拒否', () => {
-  const g = newGame();
-  assert.throws(() => makeGuess(g, [0, 0, 1, 2]), /同じ色/);
-  assert.equal(g.players[0].guesses.length, 0);
+test('countCandidates: ヒントが増えるほど候補が減り、お題は必ず残る', () => {
+  const g = createGame({}, ['A', 'B'], 0, SECRET);
+  assert.equal(countCandidates(g), 360);
+  let prev = 360;
+  for (const code of [[3, 2, 1, 0], [0, 1, 4, 5], [0, 2, 1, 3]]) {
+    makeGuess(g, code);
+    const n = countCandidates(g);
+    assert.ok(n >= 1 && n <= prev);
+    prev = n;
+  }
+  // 1手目 0H4B → 候補は {0,1,2,3} の完全順列 9 通り
+  const g2 = createGame({}, ['A', 'B'], 0, SECRET);
+  makeGuess(g2, [3, 2, 1, 0]);
+  assert.equal(countCandidates(g2), 9);
+});
+
+test('countCandidates: 重複ありでも数えられる', () => {
+  const g = createGame({ allowDuplicates: true }, ['A', 'B'], 0, [0, 0, 1, 1]);
+  assert.equal(countCandidates(g), 1296);
+  makeGuess(g, [0, 0, 1, 1]);
+  assert.equal(g.phase, 'finished');
 });
