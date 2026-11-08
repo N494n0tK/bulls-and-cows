@@ -209,6 +209,20 @@ main {
   box-shadow: inset 0 -3px 0 rgba(0, 0, 0, 0.3);
 }
 
+/* 数字モード：丸ピンの代わりに数字のタイル */
+.peg.num-peg {
+  border-radius: 28%;
+  font-weight: 900;
+  font-size: calc(var(--size) * 0.56);
+  line-height: 1;
+  font-variant-numeric: tabular-nums;
+}
+.peg.num-peg:not(.empty):not(.hidden-peg) {
+  background: linear-gradient(#ffffff, #f1e9da);
+  color: var(--ink);
+  box-shadow: inset 0 -3px 0 #d8ccb6, 0 2px 3px rgba(0, 0, 0, 0.2);
+}
+
 /* ---------- コード入力 ---------- */
 .code-input { display: flex; flex-direction: column; align-items: center; gap: 14px; }
 .slots {
@@ -228,6 +242,7 @@ main {
   cursor: pointer;
 }
 .slot.active { outline: 3px dashed var(--accent); outline-offset: 1px; }
+.slot:has(.num-peg), .swatch:has(.num-peg) { border-radius: 30%; }
 .palette { display: flex; flex-wrap: wrap; justify-content: center; gap: 6px; max-width: 420px; }
 .swatch { transition: transform 0.1s; }
 .swatch:active { transform: scale(0.88); }

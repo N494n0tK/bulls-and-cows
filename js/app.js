@@ -53,13 +53,20 @@ function el(tag, className, text) {
 }
 
 // ---- 部品：ピン ----
+const useNumbers = () => (app.game?.settings ?? app.settings).symbols === 'number';
+const symbolName = (c) => (useNumbers() ? String(c + 1) : COLORS[c].name);
+
 function peg(colorId, { size = '', hidden = false } = {}) {
   const p = el('span', `peg ${size}`);
+  if (useNumbers()) p.classList.add('num-peg');
   if (hidden) {
     p.classList.add('hidden-peg');
     p.textContent = '?';
   } else if (colorId == null) {
     p.classList.add('empty');
+  } else if (useNumbers()) {
+    p.textContent = colorId + 1;
+    p.setAttribute('aria-label', String(colorId + 1));
   } else {
     const c = COLORS[colorId];
     p.style.setProperty('--peg', c.hex);
@@ -109,7 +116,7 @@ function createCodeInput(root) {
     slots.forEach((c, i) => {
       const b = el('button', `slot ${i === active ? 'active' : ''}`);
       b.type = 'button';
-      b.setAttribute('aria-label', `${i + 1}番目${c == null ? '（空）' : `：${COLORS[c].name}`}`);
+      b.setAttribute('aria-label', `${i + 1}番目${c == null ? '（空）' : `：${symbolName(c)}`}`);
       b.append(peg(c, { size: 'lg' }));
       b.addEventListener('click', () => {
         slots[i] = null;
@@ -126,7 +133,7 @@ function createCodeInput(root) {
       b.type = 'button';
       b.append(peg(c, { size: 'lg' }));
       b.disabled = !settings.allowDuplicates && used.has(c);
-      b.setAttribute('aria-label', COLORS[c].name);
+      b.setAttribute('aria-label', symbolName(c));
       b.addEventListener('click', () => put(c));
       palette.append(b);
     }
@@ -161,7 +168,7 @@ function readSetup() {
     colors: $('set-colors').value,
     maxTurns: $('set-turns').value,
     allowDuplicates: $('set-dup').checked,
-    showCandidates: $('set-cand').checked,
+    symbols: $('set-symbols').value,
   });
 }
 
@@ -174,7 +181,7 @@ function fillSetup() {
   $('set-turns').value = app.settings.maxTurns;
   if (!$('set-turns').value) $('set-turns').value = DEFAULT_SETTINGS.maxTurns; // 選択肢にない古い保存値
   $('set-dup').checked = app.settings.allowDuplicates;
-  $('set-cand').checked = app.settings.showCandidates;
+  $('set-symbols').value = app.settings.symbols;
   updateSetupHint();
 }
 
@@ -225,12 +232,8 @@ function renderBoard(container, game, { reveal = false } = {}) {
   const head = el('div', 'board-head');
   const titleBox = el('div', 'board-title');
   titleBox.append(el('h2', '', 'お題'));
-  if (s.showCandidates) {
-    const left = app.candidates[app.candidates.length - 1];
-    const cand = el('p', `cand ${left <= 3 && !reveal ? 'danger' : ''}`);
-    cand.innerHTML = reveal ? '' : `残りの候補 <b>${left.toLocaleString()}</b> 通り`;
-    titleBox.append(cand);
-  }
+  // 残りの候補数はプレイ中は隠し、終わってからの振り返りでだけ見せる
+  if (reveal) titleBox.append(el('p', 'cand', '振り返り：各コール後に残っていた答えの候補数'));
   head.append(titleBox, codeRow(game.secret, { hidden: !reveal }));
   container.append(head);
 
@@ -242,7 +245,7 @@ function renderBoard(container, game, { reveal = false } = {}) {
     const txt = el('span', 'hb-text');
     txt.innerHTML = `<b>${g.hit}</b>H <b>${g.blow}</b>B`;
     li.append(txt);
-    if (s.showCandidates) {
+    if (reveal) {
       const n = app.candidates[r + 1];
       li.append(el('span', `left ${n <= 3 ? 'danger' : ''}`, g.hit === s.length ? '正解' : `のこり${n}`));
     }
@@ -284,13 +287,7 @@ function renderGame() {
 
   const status = $('status');
   status.className = `status p${cur}`;
-  const left = app.candidates[app.candidates.length - 1];
-  if (g.settings.showCandidates && left === 1) {
-    status.textContent = `答えは1つにしぼれた！ ${name}さん、決めるチャンス！`;
-    status.classList.add('alert');
-  } else {
-    status.textContent = `${name}さんの番です`;
-  }
+  status.textContent = `${name}さんの番です`;
 
   $('guess-panel').className = `card guess-panel p${cur}`;
   $('guess-title').textContent = `${name}さんのコール`;

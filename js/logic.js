@@ -17,10 +17,10 @@ export const COLORS = [
 
 export const DEFAULT_SETTINGS = Object.freeze({
   length: 4, // お題の長さ（ピンの数）
-  colors: 6, // 使う色の数
-  allowDuplicates: false, // 同じ色の重複を許すか
+  colors: 6, // 使う種類（数字・色）の数
+  allowDuplicates: false, // 同じものの重複を許すか
   maxTurns: 8, // 1人あたりのコール回数（0 = 無制限）。2人とも使い切ったら引き分け
-  showCandidates: true, // 残りの候補数を表示する（どれだけ答えに近づいたかの目安）
+  symbols: 'number', // ピンの見た目：'number'（数字）または 'color'（色）
 });
 
 /** お題に対するコールの判定。hit = 色も位置も一致、blow = 色だけ一致。 */
@@ -45,13 +45,13 @@ export function score(secret, guess) {
 /** コードが設定に合っているかを調べ、問題があればその理由（日本語）を返す。正しければ null。 */
 export function validateCode(code, settings) {
   if (!Array.isArray(code) || code.length !== settings.length || code.some((c) => c == null)) {
-    return `${settings.length}つすべてのマスに色を入れてください`;
+    return `${settings.length}つすべてのマスを埋めてください`;
   }
   for (const c of code) {
-    if (!Number.isInteger(c) || c < 0 || c >= settings.colors) return '使えない色が含まれています';
+    if (!Number.isInteger(c) || c < 0 || c >= settings.colors) return '使えない数字・色が含まれています';
   }
   if (!settings.allowDuplicates && new Set(code).size !== code.length) {
-    return '同じ色は1回しか使えません';
+    return '同じものは1回しか使えません';
   }
   return null;
 }
@@ -62,7 +62,7 @@ export function normalizeSettings(input = {}) {
   s.colors = clampInt(s.colors, 4, COLORS.length);
   s.allowDuplicates = Boolean(s.allowDuplicates);
   s.maxTurns = clampInt(s.maxTurns, 0, 30);
-  s.showCandidates = Boolean(s.showCandidates);
+  s.symbols = s.symbols === 'color' ? 'color' : 'number';
   // 重複なしなら、色の数はピンの数以上でなければお題が作れない
   if (!s.allowDuplicates && s.colors < s.length) s.colors = s.length;
   return s;

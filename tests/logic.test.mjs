@@ -30,9 +30,15 @@ test('validateCode', () => {
   assert.equal(validateCode([0, 1, 2, 3], s), null);
   assert.match(validateCode([0, 1, 2], s), /4つ/);
   assert.match(validateCode([0, 1, null, 3], s), /4つ/);
-  assert.match(validateCode([0, 1, 1, 3], s), /同じ色/);
-  assert.match(validateCode([0, 1, 2, 6], s), /使えない色/);
+  assert.match(validateCode([0, 1, 1, 3], s), /同じもの/);
+  assert.match(validateCode([0, 1, 2, 6], s), /使えない/);
   assert.equal(validateCode([1, 1, 1, 1], { ...s, allowDuplicates: true }), null);
+});
+
+test('normalizeSettings: 見た目は数字が標準', () => {
+  assert.equal(normalizeSettings({}).symbols, 'number');
+  assert.equal(normalizeSettings({ symbols: 'color' }).symbols, 'color');
+  assert.equal(normalizeSettings({ symbols: 'xxx' }).symbols, 'number');
 });
 
 test('normalizeSettings: 重複なしなら色数はピン数以上', () => {
@@ -96,7 +102,7 @@ test('2人ともコール回数を使い切ったら引き分け', () => {
 
 test('不正なコールは拒否して手番も進まない', () => {
   const g = createGame({}, ['A', 'B'], 0, SECRET);
-  assert.throws(() => makeGuess(g, [0, 0, 1, 2]), /同じ色/);
+  assert.throws(() => makeGuess(g, [0, 0, 1, 2]), /同じもの/);
   assert.equal(g.guesses.length, 0);
   assert.equal(g.current, 0);
 });

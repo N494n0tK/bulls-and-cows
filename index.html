@@ -49,13 +49,13 @@
             </select>
           </label>
           <label class="setting">
-            <span>色の数</span>
+            <span>種類の数</span>
             <select id="set-colors">
-              <option value="4">4色</option>
-              <option value="5">5色</option>
-              <option value="6">6色</option>
-              <option value="7">7色</option>
-              <option value="8">8色</option>
+              <option value="4">4種類</option>
+              <option value="5">5種類</option>
+              <option value="6">6種類</option>
+              <option value="7">7種類</option>
+              <option value="8">8種類</option>
             </select>
           </label>
           <label class="setting">
@@ -68,13 +68,16 @@
               <option value="0">無制限</option>
             </select>
           </label>
-          <label class="setting check">
-            <input type="checkbox" id="set-dup">
-            <span>同じ色を何度も使える</span>
+          <label class="setting">
+            <span>ピンの見た目</span>
+            <select id="set-symbols">
+              <option value="number">数字（1〜8）</option>
+              <option value="color">色</option>
+            </select>
           </label>
           <label class="setting check">
-            <input type="checkbox" id="set-cand">
-            <span>残りの候補数を表示する</span>
+            <input type="checkbox" id="set-dup">
+            <span>同じものを何度も使える</span>
           </label>
         </div>
         <p class="hint" id="setup-hint"></p>
@@ -141,19 +144,19 @@
     <form method="dialog">
       <h2>あそびかた</h2>
       <ol>
-        <li>コンピューターが、色の並び（<strong>お題</strong>）をランダムに1つ決めます。</li>
+        <li>コンピューターが、数字（または色）の並び（<strong>お題</strong>）をランダムに1つ決めます。</li>
         <li>2人で交互に、お題を予想して「コール」します。</li>
         <li>コールするたびにヒントが出ます。
           <ul>
-            <li><span class="pip hit"></span><strong>ヒット</strong>：色も位置も合っている</li>
-            <li><span class="pip blow"></span><strong>ブロー</strong>：色は合っているが位置がちがう</li>
+            <li><span class="pip hit"></span><strong>ヒット</strong>：数字（色）も位置も合っている</li>
+            <li><span class="pip blow"></span><strong>ブロー</strong>：数字（色）は合っているが位置がちがう</li>
           </ul>
         </li>
         <li>先にお題を<strong>すべてヒット</strong>させた人の勝ち！</li>
       </ol>
       <h3>駆け引きのコツ</h3>
       <p class="hint">コールもヒントも2人に見えています。自分のコールで答えがしぼれると、次の番の相手が先に当ててしまうかもしれません。
-      「残りの候補」が少なくなってきたら要注意。わざと情報を出しすぎないコールも作戦のうちです。</p>
+      わざと情報を出しすぎないコールも作戦のうち。各コールのあとに答えの候補がいくつ残っていたかは、対戦が終わってから振り返れます。</p>
       <p class="hint">どちらも当てられずにコール回数を使い切ったら引き分けです。</p>
       <button class="btn primary" value="close">とじる</button>
     </form>
